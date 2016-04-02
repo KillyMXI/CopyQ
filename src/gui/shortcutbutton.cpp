@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,7 +19,6 @@
 
 #include "gui/shortcutbutton.h"
 
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
 #include "gui/shortcutdialog.h"
@@ -160,32 +159,37 @@ void ShortcutButton::addShortcut(QPushButton *shortcutButton)
     ShortcutDialog *dialog = new ShortcutDialog(parent);
     dialog->setExpectModifier(m_expectModifier);
 
-    if (dialog->exec() == QDialog::Accepted) {
-        const QKeySequence shortcut = dialog->shortcut();
-        if ( shortcut.isEmpty() || shortcuts().contains(shortcut) ) {
-            if (shortcutButton != NULL && shortcutForButton(*shortcutButton) != shortcut ) {
-                const QString shortcut = shortcutButton->text();
-                delete shortcutButton;
-                emit shortcutRemoved(shortcut);
-            }
-        } else {
-            if (shortcutButton != NULL) {
-                const QKeySequence oldShortuct = shortcutForButton(*shortcutButton);
-                if (oldShortuct != shortcut) {
-                    emit shortcutRemoved(oldShortuct);
-                    setButtonShortcut(shortcutButton, shortcut);
-                    emit shortcutAdded(shortcut);
-                }
-            } else {
-                addShortcut(shortcut);
-            }
+    if (dialog->exec() == QDialog::Rejected)
+        return;
+
+    const QKeySequence newShortcut = dialog->shortcut();
+    const QKeySequence oldShortcut = shortcutButton
+            ? shortcutForButton(*shortcutButton)
+            : QKeySequence();
+
+    if (oldShortcut == newShortcut)
+        return;
+
+    // Remove shortcut button if shortcut is removed, unrecognized or already set.
+    if ( newShortcut.isEmpty() || shortcuts().contains(newShortcut) ) {
+        if (shortcutButton) {
+            delete shortcutButton;
+            emit shortcutRemoved(oldShortcut);
         }
+    } else if (shortcutButton) {
+        emit shortcutRemoved(oldShortcut);
+        setButtonShortcut(shortcutButton, newShortcut);
+        emit shortcutAdded(newShortcut);
+    } else {
+        addShortcut(newShortcut);
     }
 }
 
 void ShortcutButton::setButtonShortcut(QPushButton *shortcutButton, const QKeySequence &shortcut)
 {
-    shortcutButton->setText( shortcut.toString(QKeySequence::NativeText) );
+    QString label = shortcut.toString(QKeySequence::NativeText);
+    label.replace( QChar('&'), QString("&&") );
+    shortcutButton->setText(label);
     shortcutButton->setProperty(propertyShortcut, shortcut);
 }
 

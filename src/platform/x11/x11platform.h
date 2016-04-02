@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -68,8 +68,6 @@ public:
     void loadSettings() {}
 
     PlatformClipboardPtr clipboard();
-
-    int keyCode(const QKeyEvent &event);
 
 private:
     QSharedPointer<X11DisplayGuard> d;

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -42,6 +42,7 @@ public:
     class Item {
         friend class ItemOrderList;
     public:
+        virtual ~Item() {}
         virtual QVariant data() const { return QVariant(); }
     private:
         virtual QWidget *createWidget(QWidget *parent) const = 0;
@@ -60,8 +61,12 @@ public:
 
     void insertItem(const QString &label, bool checked, bool highlight, const QIcon &icon, const ItemPtr &Item, int targetRow);
 
+    /// Returns widget created by Item::createWidget() given @a row
+    /// (could be NULL is not yet created).
     QWidget *widget(int row) const;
-    ItemPtr item(int row) const;
+
+    /// Returns Item::data() for item in given @a row.
+    QVariant data(int row) const;
 
     int itemCount() const;
 

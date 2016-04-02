@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,9 +22,11 @@
 
 #include "common/commandtester.h"
 #include "gui/clipboardbrowser.h"
+#include "gui/menuitems.h"
 
 #include "platform/platformnativeinterface.h"
 
+#include <QAction>
 #include <QClipboard>
 #include <QMainWindow>
 #include <QPointer>
@@ -35,7 +37,6 @@ class ActionHandler;
 class CommandDialog;
 class ConfigurationManager;
 class NotificationDaemon;
-class QAction;
 class QModelIndex;
 class TrayMenu;
 struct Command;
@@ -70,6 +71,7 @@ struct MainWindowOptions {
         , transparency(0)
         , transparencyFocused(0)
         , hideTabs(false)
+        , hideMainWindow(false)
         , itemActivationCommands(ActivateCloses)
         , clearFirstTab(false)
         , trayItemPaste(true)
@@ -93,6 +95,8 @@ struct MainWindowOptions {
     int transparencyFocused;
 
     bool hideTabs;
+
+    bool hideMainWindow;
 
     int itemActivationCommands;
 
@@ -122,7 +126,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = NULL);
+    explicit MainWindow(ItemFactory *itemFactory, QWidget *parent = NULL);
     ~MainWindow();
 
     /** Return true if in browse mode (i.e. search field is hidden). */
@@ -162,10 +166,11 @@ public:
     int findTabIndex(const QString &name);
 
     /**
-     * Create tab with given @a name if it doesn't exist.
+     * Tries to find tab with exact or similar name (ignores
+     * key hints '&') or creates new one.
      * @return Existing or new tab with given @a name.
      */
-    ClipboardBrowser *createTab(
+    ClipboardBrowser *tab(
             const QString &name //!< Name of the new tab.
             );
 
@@ -198,6 +203,10 @@ public:
     void showWindow();
     /** Hide window to tray or minimize if tray is not available. */
     void hideWindow();
+    /** Minimize window (hide if option is set). */
+    void minimizeWindow();
+    /** Set current tab. */
+    bool setCurrentTab(int index);
     /** Show window and given tab and give focus to the tab. */
     void showBrowser(int index);
     /** Enter browse mode and reset search. */
@@ -244,9 +253,6 @@ public:
     /** Return true only if monitoring is enabled. */
     bool isMonitoringEnabled() const;
 
-    /** Return true if clipboard storing was disabled. */
-    bool isClipboardStoringDisabled() const { return m_clipboardStoringDisabled; }
-
     /** Abort execution of automatic commands. */
     void abortAutomaticCommands();
 
@@ -255,7 +261,17 @@ public:
     /** Update the first item in the first tab. */
     void updateFirstItem(const QVariantMap &data);
 
-    void setExitAfterClosed();
+    /// Get description for all user options (used by config() command).
+    QString getUserOptionsDescription() const;
+
+    /// Get description for an user option (used by config() command).
+    QString getUserOptionValue(const QString &name) const;
+
+    /// Set value of user option (used by config() command).
+    void setUserOptionValue(const QString &name, const QString &value);
+
+    /// Return true only if user option is available (used by config() command).
+    bool hasUserOption(const QString &name) const;
 
 public slots:
     /** Close main window and exit the application. */
@@ -263,6 +279,9 @@ public slots:
 
     /** Load settings. */
     void loadSettings();
+
+    /** Open log dialog. */
+    void openLogDialog();
 
     /** Open about dialog. */
     void openAboutDialog();
@@ -302,6 +321,9 @@ public slots:
 
     /** Activate current item. */
     void activateCurrentItem();
+
+    /** Set current tab. */
+    void setCurrentTab(const ClipboardBrowser *browser);
 
     /** Show window and given tab and give focus to the tab. */
     void showBrowser(const ClipboardBrowser *browser);
@@ -394,6 +416,8 @@ signals:
     void stopItemMenuCommandTester();
     void stopTrayMenuCommandTester();
 
+    void configurationChanged();
+
 protected:
     void keyPressEvent(QKeyEvent *event);
     void keyReleaseEvent(QKeyEvent *event);
@@ -403,6 +427,8 @@ protected:
     void closeEvent(QCloseEvent *event);
 
     void showEvent(QShowEvent *event);
+
+    void hideEvent(QHideEvent *event);
 
 #if QT_VERSION < 0x050000
 #   ifdef COPYQ_WS_X11
@@ -439,9 +465,12 @@ private slots:
 
     /** Update tray and window icon depending on current state. */
     void updateIcon();
-    void updateIconTimeout();
+    void updateIconSnipTimeout();
 
     void updateContextMenuTimeout();
+
+    /** Update icon snip animation. */
+    void updateIconSnip();
 
     void onAboutToQuit();
 
@@ -460,7 +489,6 @@ private slots:
     void action();
 
     void automaticCommandTestFinished(const Command &command, bool passed);
-    void automaticCommandFinished();
 
     void enableActionForCommand(QMenu *menu, const Command &command, bool enable);
     void addCommandsToItemMenu(const Command &command, bool enable);
@@ -475,6 +503,16 @@ private slots:
     void moveToBottom();
 
 private:
+    enum TabNameMatching {
+        MatchExactTabName,
+        MatchSimilarTabName
+    };
+
+    ClipboardBrowser *createTab(
+            const QString &name, TabNameMatching nameMatch, bool *needSave = NULL);
+
+    int findTabIndexExactMatch(const QString &name);
+
     void clearTitle() { updateTitle(QVariantMap()); }
 
     /** Create menu bar and tray menu with items. Called once. */
@@ -506,23 +544,20 @@ private:
      * Return true if window should be minimized instead of closed/hidden.
      *
      * If tray icon is not available, window should be minimized so that it can be opened with
-     * mouse. Some window managers (dwm, wmfs etc.) doesn't support minimizing, in that case
-     * window can be hidden instead.
+     * mouse.
      */
     bool closeMinimizes() const;
 
     /** Return notification daemon (create if doesn't exist). */
     NotificationDaemon *notificationDaemon();
 
-    ClipboardBrowser *createTab(const QString &name, bool *needSave);
+    QAction *createAction(int id, const char *slot, QMenu *menu);
 
-    QAction *createAction(Actions::Id id, const char *slot, QMenu *menu);
-
-    QAction *addTrayAction(Actions::Id id);
+    QAction *addTrayAction(int id);
 
     void updateTabIcon(const QString &newName, const QString &oldName);
 
-    QAction *addItemAction(Actions::Id id, QObject *receiver, const char *slot);
+    QAction *addItemAction(int id, QObject *receiver, const char *slot);
 
     void addCommandsToMenu(QMenu *menu, const QVariantMap &data);
 
@@ -536,11 +571,21 @@ private:
 
     void initTray();
 
-    void runNextAutomaticCommand();
+    void runAutomaticCommand(const Command &command);
 
     bool isWindowVisible() const;
 
     ClipboardBrowser *clipboardTab();
+
+    void onEscape();
+
+    /** Disable shortcuts for all default actions. */
+    void setDisabledShortcuts(const QList<QKeySequence> &shortcuts);
+
+    void updateActionShortcuts(int id);
+    void updateActionShortcuts();
+
+    QAction *actionForMenuItem(int id, QWidget *parent, Qt::ShortcutContext context);
 
     ConfigurationManager *cm;
     Ui::MainWindow *ui;
@@ -557,6 +602,7 @@ private:
 
     ClipboardBrowserSharedPtr m_sharedData;
     QList<Command> m_commands;
+    QPointer<QAction> m_activateCurrentItemAction;
 
     PlatformWindowPtr m_lastWindow;
 
@@ -565,11 +611,8 @@ private:
     QTimer m_timerShowWindow;
     QTimer m_timerTrayAvailable;
     QTimer m_timerTrayIconSnip;
-    QTimer m_timerMinimizing;
 
     NotificationDaemon *m_notifications;
-
-    bool m_minimizeUnsupported;
 
     ActionHandler *m_actionHandler;
 
@@ -583,9 +626,18 @@ private:
     CommandTester m_trayMenuCommandTester;
     CommandTester m_automaticCommandTester;
 
-    QList<Command> m_automaticCommands;
+    bool m_stopAutomaticCommands;
     QPointer<Action> m_currentAutomaticCommand;
     bool m_canUpdateTitleFromScript;
+
+    bool m_iconSnip;
+
+    bool m_wasMaximized;
+
+    QList<QKeySequence> m_disabledShortcuts;
+
+    QVector< QPointer<QAction> > m_actions;
+    MenuItems m_menuItems;
 };
 
 #endif // MAINWINDOW_H

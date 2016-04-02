@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,7 +22,6 @@
 #include "common/contenttype.h"
 #include "item/itemwidget.h"
 
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,10 +20,9 @@
 #ifndef PLUGINWIDGET_H
 #define PLUGINWIDGET_H
 
-#include "item/itemwidget.h"
-
 #include <QWidget>
 
+class ItemLoaderInterface;
 class QSettings;
 
 namespace Ui {
@@ -35,21 +34,14 @@ class PluginWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit PluginWidget(const ItemLoaderInterfacePtr &loader, QWidget *parent = 0);
+    explicit PluginWidget(ItemLoaderInterface *loader, QWidget *parent = NULL);
     ~PluginWidget();
 
-    ItemLoaderInterfacePtr loader() const { return m_loader; }
-
-    void applySettings(QSettings *settings, bool isPluginEnabled);
-
-protected:
-    void showEvent(QShowEvent *event);
+    ItemLoaderInterface *loader() const { return m_loader; }
 
 private:
-    void init();
-
     Ui::PluginWidget *ui;
-    ItemLoaderInterfacePtr m_loader;
+    ItemLoaderInterface *m_loader;
 };
 
 #endif // PLUGINWIDGET_H

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,23 +21,16 @@
 
 #include "common/contenttype.h"
 #include "common/common.h"
-#include "gui/configurationmanager.h"
 #include "gui/icons.h"
 #include "platform/platformnativeinterface.h"
 #include "platform/platformwindow.h"
 
 #include <QApplication>
-#include <QDesktopWidget>
 #include <QKeyEvent>
-#include <QMimeData>
 #include <QModelIndex>
-#include <QPainter>
 #include <QPixmap>
-#include <QToolTip>
 
 namespace {
-
-const char propertyHasToolTip[] = "CopyQ_has_tooltip";
 
 bool canActivate(const QAction &action)
 {
@@ -67,38 +60,6 @@ QAction *lastEnabledAction(QMenu *menu)
     return NULL;
 }
 
-void showToolTipForAction(const QString &text, QAction *action, QMenu *menu)
-{
-    const QPoint pos = menu->actionGeometry(action).topRight();
-    QToolTip::showText( menu->mapToGlobal(pos), text, menu );
-}
-
-void setActionToolTip(QAction *action, const QString &tooltip)
-{
-    action->setToolTip(tooltip);
-    action->setProperty( propertyHasToolTip, !tooltip.isEmpty() );
-}
-
-bool hasToolTip(QAction *action)
-{
-    return action->property(propertyHasToolTip).toBool();
-}
-
-void drawToolTipIcon(const QRect &actionRect, bool isSelected, QPaintDevice *paintDevice)
-{
-    QIcon icon = getIcon("", IconEditSign);
-    if (icon.isNull())
-        return;
-
-    QPainter painter(paintDevice);
-    painter.setOpacity(0.7);
-
-    const int size = actionRect.height();
-    const QPixmap pixmap = icon.pixmap(size, size, isSelected ? QIcon::Selected : QIcon::Normal);
-
-    painter.drawPixmap( actionRect.right() - size, actionRect.top(), pixmap );
-}
-
 } // namespace
 
 TrayMenu::TrayMenu(QWidget *parent)
@@ -107,11 +68,8 @@ TrayMenu::TrayMenu(QWidget *parent)
     , m_customActionsSeparator()
     , m_clipboardItemActionCount(0)
     , m_omitPaste(false)
+    , m_viMode(false)
 {
-    connect( this, SIGNAL(hovered(QAction*)),
-             this, SLOT(onActionHovered(QAction*)) );
-
-    initSingleShotTimer( &m_timerShowTooltip, 250, this, SLOT(updateTooltip()) );
 }
 
 void TrayMenu::toggle()
@@ -126,10 +84,12 @@ void TrayMenu::toggle()
     raise();
     activateWindow();
 
-    QApplication::processEvents();
-    PlatformWindowPtr window = createPlatformNativeInterface()->getWindow(winId());
-    if (window)
-        window->raise();
+    if (!isActiveWindow()) {
+        QApplication::processEvents();
+        PlatformWindowPtr window = createPlatformNativeInterface()->getWindow(winId());
+        if (window)
+            window->raise();
+    }
 }
 
 void TrayMenu::addClipboardItemAction(const QModelIndex &index, bool showImages, bool isCurrent)
@@ -137,9 +97,7 @@ void TrayMenu::addClipboardItemAction(const QModelIndex &index, bool showImages,
     QAction *act;
 
     const QVariantMap data = index.data(contentType::data).toMap();
-    const QString text = getTextData(data);
-    act = addAction(text);
-    act->setWhatsThis(text);
+    act = addAction(QString());
 
     act->setData(index.data(contentType::hash));
 
@@ -157,8 +115,6 @@ void TrayMenu::addClipboardItemAction(const QModelIndex &index, bool showImages,
 
     const QString label = textLabelForData( data, act->font(), format, true );
     act->setText(label);
-
-    setActionToolTip( act, index.data(contentType::notes).toString() );
 
     // Menu item icon from image.
     if (showImages) {
@@ -208,15 +164,9 @@ void TrayMenu::setActiveFirstEnabledAction()
         setActiveAction(action);
 }
 
-void TrayMenu::paintEvent(QPaintEvent *event)
+void TrayMenu::setViModeEnabled(bool enabled)
 {
-    QMenu::paintEvent(event);
-
-    // Draw small icon for items with notes.
-    foreach ( QAction *action, actions() ) {
-        if ( hasToolTip(action) )
-            drawToolTipIcon(actionGeometry(action), action == activeAction(), this);
-    }
+    m_viMode = enabled;
 }
 
 void TrayMenu::keyPressEvent(QKeyEvent *event)
@@ -227,6 +177,8 @@ void TrayMenu::keyPressEvent(QKeyEvent *event)
     if (event->modifiers() == Qt::KeypadModifier && Qt::Key_0 <= k && k <= Qt::Key_9) {
         // Allow keypad digit to activate appropriate item in context menu.
         event->setModifiers(Qt::NoModifier);
+    } else if ( m_viMode && handleViKey(event, this) ) {
+        return;
     } else {
         // Movement in tray menu.
         switch (k) {
@@ -247,14 +199,6 @@ void TrayMenu::keyPressEvent(QKeyEvent *event)
         case Qt::Key_Escape:
             close();
             break;
-        case Qt::Key_F1: {
-            QAction *action = activeAction();
-            if (action != NULL) {
-                showToolTipForAction(action->whatsThis(), action, this);
-                return;
-            }
-            break;
-        }
         }
     }
 
@@ -290,23 +234,4 @@ void TrayMenu::onClipboardItemActionTriggered()
     uint hash = actionData.toUInt();
     emit clipboardItemActionTriggered(hash, m_omitPaste);
     close();
-}
-
-void TrayMenu::onActionHovered(QAction *action)
-{
-    QToolTip::hideText();
-
-    if ( hasToolTip(action) )
-        m_timerShowTooltip.start();
-    else
-        m_timerShowTooltip.stop();
-}
-
-void TrayMenu::updateTooltip()
-{
-    QAction *action = activeAction();
-    if ( action == NULL || !hasToolTip(action) )
-        return;
-
-    showToolTipForAction(action->toolTip(), action, this);
 }

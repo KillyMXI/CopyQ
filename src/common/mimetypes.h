@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -33,5 +33,6 @@ extern const char mimeCurrentTab[];
 extern const char mimeSelectedItems[];
 extern const char mimeCurrentItem[];
 extern const char mimeHidden[];
+extern const char mimeShortcut[];
 
 #endif // MIMETYPES_H

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -56,6 +56,7 @@ void RemoteProcess::start(const QString &newServerName, const QStringList &argum
 
     Server *server = new Server(newServerName, this);
     if ( !server->isListening() ) {
+        log("Failed to start monitor server \"" + newServerName + "\"!", LogError);
         delete server;
         onConnectionError();
         return;
@@ -131,7 +132,7 @@ void RemoteProcess::onMessageReceived(const QByteArray &message, int messageCode
         m_timerPongTimeout.stop();
         m_timerPing.start();
     } else if (messageCode == MonitorLog) {
-        log( QString::fromUtf8(message).trimmed(), LogNote );
+        log( getTextData(message).trimmed(), LogNote );
     } else if (messageCode == MonitorClipboardChanged) {
         emit newMessage(message);
     } else {

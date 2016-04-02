@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,19 +19,20 @@
 
 #include "clipboardbrowser.h"
 
+#include "common/appconfig.h"
 #include "common/action.h"
 #include "common/common.h"
 #include "common/contenttype.h"
 #include "common/log.h"
 #include "common/mimetypes.h"
 #include "gui/clipboarddialog.h"
-#include "gui/configtabappearance.h"
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
+#include "gui/theme.h"
 #include "item/itemeditor.h"
 #include "item/itemeditorwidget.h"
 #include "item/itemfactory.h"
+#include "item/itemstore.h"
 #include "item/itemwidget.h"
 
 #include <QApplication>
@@ -146,7 +147,7 @@ private:
     bool m_currentSelected;
 };
 
-ClipboardBrowserShared::ClipboardBrowserShared()
+ClipboardBrowserShared::ClipboardBrowserShared(ItemFactory *itemFactory)
     : editor()
     , maxItems(100)
     , textWrap(true)
@@ -154,32 +155,33 @@ ClipboardBrowserShared::ClipboardBrowserShared()
     , saveOnReturnKey(false)
     , moveItemOnReturnKey(false)
     , minutesToExpire(0)
+    , itemFactory(itemFactory)
 {
 }
 
 void ClipboardBrowserShared::loadFromConfiguration()
 {
-    ConfigurationManager *cm = ConfigurationManager::instance();
-    editor = cm->value("editor").toString();
-    maxItems = cm->value("maxitems").toInt();
-    textWrap = cm->value("text_wrap").toBool();
-    viMode = cm->value("vi").toBool();
-    saveOnReturnKey = !cm->value("edit_ctrl_return").toBool();
-    moveItemOnReturnKey = cm->value("move").toBool();
-    minutesToExpire = cm->value("expire_tab").toInt();
+    AppConfig appConfig;
+    editor = appConfig.option<Config::editor>();
+    maxItems = appConfig.option<Config::maxitems>();
+    textWrap = appConfig.option<Config::text_wrap>();
+    viMode = appConfig.option<Config::vi>();
+    saveOnReturnKey = !appConfig.option<Config::edit_ctrl_return>();
+    moveItemOnReturnKey = appConfig.option<Config::move>();
+    minutesToExpire = appConfig.option<Config::expire_tab>();
 }
 
-ClipboardBrowser::ClipboardBrowser(QWidget *parent, const ClipboardBrowserSharedPtr &sharedData)
+ClipboardBrowser::ClipboardBrowser(const ClipboardBrowserSharedPtr &sharedData, QWidget *parent)
     : QListView(parent)
-    , m_itemLoader()
+    , m_itemLoader(NULL)
     , m_tabName()
     , m_lastFiltered(-1)
     , m(this)
-    , d(this)
+    , d(this, sharedData->itemFactory)
     , m_invalidateCache(false)
     , m_expireAfterEditing(false)
     , m_editor(NULL)
-    , m_sharedData(sharedData ? sharedData : ClipboardBrowserSharedPtr(new ClipboardBrowserShared))
+    , m_sharedData(sharedData)
     , m_loadButton(NULL)
     , m_searchProgress(NULL)
     , m_dragTargetRow(-1)
@@ -237,7 +239,7 @@ bool ClipboardBrowser::isFiltered(int row) const
         return false;
 
     const QModelIndex ind = m.index(row);
-    return !ConfigurationManager::instance()->itemFactory()->matches( ind, d.searchExpression() );
+    return m_sharedData->itemFactory && !m_sharedData->itemFactory->matches( ind, d.searchExpression() );
 }
 
 bool ClipboardBrowser::hideFiltered(int row)
@@ -433,8 +435,7 @@ void ClipboardBrowser::setEditorWidget(ItemEditorWidget *editor, bool changeClip
     // Hide scrollbars while editing.
     Qt::ScrollBarPolicy scrollbarPolicy = Qt::ScrollBarAlwaysOff;
     if (!active) {
-        const ConfigTabAppearance *appearance = ConfigurationManager::instance()->tabAppearance();
-        scrollbarPolicy = appearance->themeValue("show_scrollbars").toBool()
+        scrollbarPolicy = AppConfig(AppConfig::ThemeCategory).isOptionOn("show_scrollbars", true)
                 ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff;
     }
     setVerticalScrollBarPolicy(scrollbarPolicy);
@@ -584,28 +585,29 @@ void ClipboardBrowser::updateItemMaximumSize()
 
 void ClipboardBrowser::lock()
 {
-    if (m_spinLock == 0) {
+    ++m_spinLock;
+
+    if (m_spinLock == 1) {
         m_scrollSaver.reset(new ScrollSaver(this));
         m_scrollSaver->save();
         setUpdatesEnabled(false);
     }
-
-    ++m_spinLock;
 }
 
 void ClipboardBrowser::unlock()
 {
     Q_ASSERT(m_spinLock > 0);
-    --m_spinLock;
 
-    if (m_spinLock == 0) {
-        m_scrollSaver->restore();
-        m_scrollSaver.reset(NULL);
-
+    if (m_spinLock == 1) {
         setUpdatesEnabled(true);
-
         updateCurrentPage();
+
+        m_scrollSaver->restore();
+        if (m_spinLock == 1)
+            m_scrollSaver.reset(NULL);
     }
+
+    --m_spinLock;
 }
 
 void ClipboardBrowser::refilterItems()
@@ -821,14 +823,12 @@ void ClipboardBrowser::onTabNameChanged(const QString &tabName)
         return;
     }
 
-    ConfigurationManager *cm = ConfigurationManager::instance();
-
     // Just move last saved file if tab is not loaded yet.
-    if ( isLoaded() && cm->saveItemsWithOther(m, &m_itemLoader) ) {
+    if ( isLoaded() && saveItemsWithOther(m, m_itemLoader, m_sharedData->itemFactory) ) {
         m_timerSave.stop();
-        cm->removeItems(m_tabName);
+        removeItems(m_tabName);
     } else {
-        cm->moveItems(m_tabName, tabName);
+        moveItems(m_tabName, tabName);
     }
 
     m_tabName = tabName;
@@ -897,7 +897,7 @@ void ClipboardBrowser::onEditorCancel()
 
 void ClipboardBrowser::onModelUnloaded()
 {
-    m_itemLoader.clear();
+    m_itemLoader = NULL;
 }
 
 void ClipboardBrowser::onEditorNeedsChangeClipboard()
@@ -975,6 +975,8 @@ void ClipboardBrowser::resizeEvent(QResizeEvent *event)
 {
     QListView::resizeEvent(event);
 
+    Lock updateGeometryLock(this);
+
     updateItemMaximumSize();
 
     if (m_loadButton != NULL)
@@ -983,8 +985,6 @@ void ClipboardBrowser::resizeEvent(QResizeEvent *event)
     updateSearchProgress();
 
     updateEditorGeometry();
-
-    updateCurrentPage();
 }
 
 void ClipboardBrowser::showEvent(QShowEvent *event)
@@ -1332,7 +1332,7 @@ void ClipboardBrowser::keyPressEvent(QKeyEvent *event)
         return;
 
     // translate keys for vi mode
-    if (ConfigurationManager::instance()->value("vi").toBool() && handleViKey(event))
+    if (m_sharedData->viMode && handleViKey(event, this))
         return;
 
     const int key = event->key();
@@ -1578,18 +1578,32 @@ bool ClipboardBrowser::add(const QVariantMap &data, int row)
 
 void ClipboardBrowser::addUnique(const QVariantMap &data)
 {
-    QVariantMap newData = data;
-
-    if ( select(hash(newData), MoveToTop) ) {
+    if ( select(hash(data), MoveToTop) ) {
         COPYQ_LOG("New item: Moving existing to top");
         return;
     }
 
-    bool reselectFirst = false;
+    QVariantMap newData = data;
 
+    // Don't store internal formats.
+    newData.remove(mimeWindowTitle);
+    newData.remove(mimeOwner);
+    newData.remove(mimeClipboardMode);
+    newData.remove(mimeCurrentTab);
+    newData.remove(mimeSelectedItems);
+    newData.remove(mimeCurrentItem);
+    newData.remove(mimeHidden);
+    newData.remove(mimeShortcut);
+
+#ifdef COPYQ_WS_X11
     // When selecting text under X11, clipboard data may change whenever selection changes.
     // Instead of adding item for each selection change, this updates previously added item.
-    if ( newData.contains(mimeText) ) {
+    if ( !isClipboardData(data)
+         && newData.contains(mimeText)
+         // Don't update edited item.
+         && (!editing() || currentIndex().row() != 0)
+         )
+    {
         const QModelIndex firstIndex = model()->index(0, 0);
         const QVariantMap previousData = itemData(firstIndex);
 
@@ -1604,35 +1618,29 @@ void ClipboardBrowser::addUnique(const QVariantMap &data)
             foreach (const QString &format, formatsToAdd)
                 newData.insert(format, previousData[format]);
 
-            // Remove merged item (if it's not edited).
-            if (!editing() || currentIndex().row() != 0) {
-                reselectFirst = currentIndex().row() == 0;
-                model()->removeRow(0);
+            if ( add(newData) ) {
+                const bool reselectFirst = !editing() && currentIndex().row() == 1;
+                model()->removeRow(1);
+
+                if (reselectFirst)
+                    setCurrent(0);
             }
+
+            return;
         }
     }
+#endif
 
     COPYQ_LOG("New item: Adding");
 
-    // Don't store internal formats.
-    foreach (const QString &format, newData.keys()) {
-        if ( format.startsWith(COPYQ_MIME_PREFIX) )
-            newData.remove(format);
-    }
-
     add(newData);
-
-    if (reselectFirst)
-        setCurrent(0);
 }
 
 void ClipboardBrowser::loadSettings()
 {
-    ConfigurationManager *cm = ConfigurationManager::instance();
-
     expire();
 
-    cm->tabAppearance()->decorateBrowser(this);
+    decorate( Theme() );
 
     // restore configuration
     m.setMaxItems(m_sharedData->maxItems);
@@ -1676,7 +1684,7 @@ void ClipboardBrowser::loadItemsAgain()
     m_timerSave.stop();
 
     m.blockSignals(true);
-    m_itemLoader = ConfigurationManager::instance()->loadItems(m);
+    m_itemLoader = ::loadItems(m, m_sharedData->itemFactory);
     m.blockSignals(false);
 
     // Show lock button if model is disabled.
@@ -1710,7 +1718,7 @@ bool ClipboardBrowser::saveItems()
     if ( !isLoaded() || tabName().isEmpty() )
         return false;
 
-    ConfigurationManager::instance()->saveItems(m, m_itemLoader);
+    ::saveItems(m, m_itemLoader);
     return true;
 }
 
@@ -1737,7 +1745,8 @@ void ClipboardBrowser::purgeItems()
 {
     if ( tabName().isEmpty() )
         return;
-    ConfigurationManager::instance()->removeItems(tabName());
+
+    removeItems(tabName());
     m_timerSave.stop();
 }
 
@@ -1770,6 +1779,12 @@ void ClipboardBrowser::move(int key)
     scrollTo( currentIndex() );
 }
 
+void ClipboardBrowser::decorate(const Theme &theme)
+{
+    theme.decorateBrowser(this, &d);
+    invalidateItemCache();
+}
+
 void ClipboardBrowser::invalidateItemCache()
 {
     if (editing()) {
@@ -1793,7 +1808,7 @@ bool ClipboardBrowser::editing() const
 
 bool ClipboardBrowser::isLoaded() const
 {
-    return ( m_itemLoader && !m.isDisabled() ) || tabName().isEmpty();
+    return !m_sharedData->itemFactory || ( m_itemLoader && !m.isDisabled() ) || tabName().isEmpty();
 }
 
 bool ClipboardBrowser::maybeCloseEditor()
@@ -1810,44 +1825,6 @@ bool ClipboardBrowser::maybeCloseEditor()
         }
         delete m_editor;
     }
-
-    return true;
-}
-
-bool ClipboardBrowser::handleViKey(QKeyEvent *event)
-{
-    int key = event->key();
-    Qt::KeyboardModifiers mods = event->modifiers();
-
-    switch ( key ) {
-    case Qt::Key_G:
-        key = mods & Qt::ShiftModifier ? Qt::Key_End : Qt::Key_Home;
-        mods = mods & ~Qt::ShiftModifier;
-        break;
-    case Qt::Key_J:
-        key = Qt::Key_Down;
-        break;
-    case Qt::Key_K:
-        key = Qt::Key_Up;
-        break;
-    case Qt::Key_F:
-    case Qt::Key_D:
-    case Qt::Key_B:
-    case Qt::Key_U:
-        if (mods & Qt::ControlModifier) {
-            key = (key == Qt::Key_F || key == Qt::Key_D) ? Qt::Key_PageDown : Qt::Key_PageUp;
-            mods = mods & ~Qt::ControlModifier;
-        } else {
-            return false;
-        }
-        break;
-    default:
-        return false;
-    }
-
-    QKeyEvent event2(QEvent::KeyPress, key, mods, event->text());
-    keyPressEvent(&event2);
-    event->accept();
 
     return true;
 }

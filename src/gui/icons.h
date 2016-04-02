@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -25,6 +25,7 @@ enum IconId {
     IconFirst = 0xf000,
     IconSearch = 0xf002,
     IconThList = 0xf00b,
+    IconCheck = 0xf00c,
     IconRemove = 0xf00d,
     IconOff = 0xf011,
     IconCog = 0xf013,
@@ -50,6 +51,7 @@ enum IconId {
     IconRemoveSign = 0xf057,
     IconQuestionSign = 0xf059,
     IconInfoSign = 0xf05a,
+    IconBan = 0xf05e,
     IconArrowLeft = 0xf060,
     IconArrowRight = 0xf061,
     IconArrowUp = 0xf062,
@@ -73,9 +75,11 @@ enum IconId {
     IconSave = 0xf0c7,
     IconBars = 0xf0c9,
     IconListOl = 0xf0cb,
+    IconColumns = 0xf0db,
     IconSortDown = 0xf0dd,
     IconSortUp = 0xf0de,
     IconUndo = 0xf0e2,
+    IconBolt = 0xf0e7,
     IconPaste = 0xf0ea,
     IconAngleDoubleUp = 0xf102,
     IconAngleDoubleDown = 0xf103,

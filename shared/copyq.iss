@@ -1,12 +1,14 @@
 ﻿; 1. Open this file with Inno Setup with Unicode support and preprocessor.
 ; 2. Change "#defines" below (or see below how to use COPYQ_INNO_SETUP environment variable).
 ; 3. Compile "setup.exe".
-#define AppVersion "2.4.8"
+#define AppVersion "2.6.1"
 
 ; Path with build
 #define Root "C:\dev\build-copyq-Desktop-Release"
+
 ; Path with source code
 #define Source "C:\dev\copyq"
+
 ; Path for output installation file
 #define Output "C:\dev"
 
@@ -20,15 +22,22 @@
 
 ; Choose path to Qt installation.
 #if Qt == 4
-# define QtRoot "C:\Qt\4.8.7"
+# if Toolchain == "MSVC10"
+#   define QtRoot "C:\Qt\4.8.7"
+# else
+#   define QtRoot "C:\Qt\4.8.7-mingw"
+# endif
 #else
 # define QtRoot "C:\Qt\5.2.0"
 #endif
 
+; msbuild generates Release and Debug subfolders
+;#define BuildConf "Release"
+#define BuildConf ""
+
 ; MSVC
 #if Toolchain == "MSVC10"
 # define WindowsRoot "C:\Windows\SysWOW64"
-# define BuildConf "Release"
 #endif
 
 ; To make changes permanent you can the settings above into a custom file.
@@ -125,7 +134,6 @@ Name: "startup"; Description: {cm:AutoStartProgram,CopyQ}; Flags: unchecked
 
 [Files]
 Source: "{#Root}\{#BuildConf}\copyq.exe"; DestDir: "{app}"; Components: program; Flags: ignoreversion
-Source: "{#Root}\{#BuildConf}\copyq.com"; DestDir: "{app}"; Components: program; Flags: ignoreversion
 Source: "{#Source}\AUTHORS"; DestDir: "{app}"; Components: program; Flags: ignoreversion
 Source: "{#Source}\LICENSE"; DestDir: "{app}"; Components: program; Flags: ignoreversion
 Source: "{#Source}\README.md"; DestDir: "{app}"; Components: program; Flags: ignoreversion

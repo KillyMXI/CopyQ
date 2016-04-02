@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,7 +22,6 @@
 
 #include <QMenu>
 #include <QPointer>
-#include <QTimer>
 
 class QModelIndex;
 
@@ -51,17 +50,15 @@ public:
     /** Select first enabled menu item. */
     void setActiveFirstEnabledAction();
 
+    /** Handle Vi shortcuts. */
+    void setViModeEnabled(bool enabled);
+
 signals:
     /** Emitted if numbered action triggered. */
     void clipboardItemActionTriggered(uint clipboardItemHash, bool omitPaste);
 
-protected:
-    void paintEvent(QPaintEvent *event);
-
 private slots:
     void onClipboardItemActionTriggered();
-    void onActionHovered(QAction *action);
-    void updateTooltip();
 
 protected:
     void keyPressEvent(QKeyEvent *event);
@@ -74,9 +71,8 @@ private:
     QPointer<QAction> m_customActionsSeparator;
     int m_clipboardItemActionCount;
 
-    QTimer m_timerShowTooltip;
-
     bool m_omitPaste;
+    bool m_viMode;
 };
 
 #endif // TRAYMENU_H

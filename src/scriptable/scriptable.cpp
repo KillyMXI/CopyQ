@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -238,7 +238,7 @@ QString Scriptable::toString(const QScriptValue &value) const
 {
     QByteArray *bytes = getByteArray(value);
     return (bytes == NULL) ? value.toString()
-                           : QString::fromUtf8( bytes->data() );
+                           : getTextData(*bytes);
 }
 
 bool Scriptable::toInt(const QScriptValue &value, int &number) const
@@ -446,7 +446,7 @@ void Scriptable::showAt()
     if (tabName.isEmpty())
         m_proxy->showWindowAt(rect);
     else
-        m_proxy->showBrowserAt(toString(argument(0)), rect);
+        m_proxy->showBrowserAt(tabName, rect);
 
     sendWindowActivationCommandToClient( m_proxy->mainWinId() );
 }
@@ -456,10 +456,14 @@ void Scriptable::hide()
     m_proxy->close();
 }
 
-void Scriptable::toggle()
+QScriptValue Scriptable::toggle()
 {
-    if ( m_proxy->toggleVisible() )
+    if ( m_proxy->toggleVisible() ) {
         sendWindowActivationCommandToClient( m_proxy->mainWinId() );
+        return true;
+    }
+
+    return false;
 }
 
 void Scriptable::menu()
@@ -562,7 +566,7 @@ QScriptValue Scriptable::tab()
     if ( name.isNull() )
         return toScriptValue( m_proxy->tabs(), this );
 
-    m_proxy->setCurrentTab(name);
+    m_proxy->setTab(name);
     return applyRest(1);
 }
 
@@ -662,7 +666,7 @@ void Scriptable::edit()
 {
     QScriptValue value;
     QString text;
-    int row;
+    int row = -1;
 
     const int len = argumentCount();
     for ( int i = 0; i < len; ++i ) {
@@ -672,7 +676,7 @@ void Scriptable::edit()
         if ( toInt(value, row) ) {
             const QByteArray bytes = row >= 0 ? m_proxy->browserItemData(row, mimeText)
                                               : m_proxy->getClipboardData(mimeText);
-            text.append( QString::fromUtf8(bytes) );
+            text.append( getTextData(bytes) );
         } else {
             text.append( toString(value) );
         }
@@ -752,11 +756,11 @@ void Scriptable::action()
             text.append(sep);
         else
             anyRows = true;
-        text.append( QString::fromUtf8(m_proxy->browserItemData(row, mimeText)) );
+        text.append( getTextData(m_proxy->browserItemData(row, mimeText)) );
     }
 
     if (!anyRows) {
-        text = QString::fromUtf8( m_proxy->getClipboardData(mimeText) );
+        text = getTextData( m_proxy->getClipboardData(mimeText) );
     }
 
     const QVariantMap data = createDataMap(mimeText, text);
@@ -767,7 +771,7 @@ void Scriptable::action()
         command.output = mimeText;
         command.input = mimeText;
         command.wait = false;
-        command.outputTab = m_proxy->currentTab();
+        command.outputTab = m_proxy->tab();
         command.sep = ((i + 1) < argumentCount()) ? toString( argument(i + 1) )
                                                   : QString('\n');
         m_proxy->action(data, command);
@@ -866,6 +870,18 @@ QScriptValue Scriptable::data(const QScriptValue &value)
     return newByteArray( m_data.value(toString(value)).toByteArray() );
 }
 
+QScriptValue Scriptable::setData()
+{
+    const QString mime = arg(0);
+    if ( !toItemData(argument(1), mime, &m_data) )
+        return false;
+
+    if ( m_data.value(mimeSelectedItems).isValid() )
+        m_proxy->setSelectedItemsData(mime, m_data.value(mime));
+
+    return true;
+}
+
 void Scriptable::print(const QScriptValue &value)
 {
     sendMessageToClient(makeByteArray(value), CommandSuccess);
@@ -912,6 +928,12 @@ void Scriptable::keys()
 QScriptValue Scriptable::testSelected()
 {
     return m_proxy->testSelected();
+}
+
+void Scriptable::setCurrentTab()
+{
+    const QString tabName = arg(0);
+    m_proxy->setCurrentTab(tabName);
 }
 
 QScriptValue Scriptable::selectItems()
@@ -1151,6 +1173,20 @@ QScriptValue Scriptable::networkPost()
     const QString url = arg(0);
     const QByteArray postData = makeByteArray(argument(1));
     return NetworkReply::post(url, postData, this);
+}
+
+QScriptValue Scriptable::env()
+{
+    const QString name = arg(0);
+    const QByteArray value = qgetenv(name.toUtf8().constData());
+    return newByteArray(value);
+}
+
+QScriptValue Scriptable::setEnv()
+{
+    const QString name = arg(0);
+    const QByteArray value = makeByteArray(argument(1));
+    return qputenv(name.toUtf8().constData(), value);
 }
 
 void Scriptable::setInput(const QByteArray &bytes)

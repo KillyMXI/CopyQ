@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,12 +20,13 @@
 #include "commandwidget.h"
 #include "ui_commandwidget.h"
 
+#include "common/common.h"
 #include "common/command.h"
 #include "common/mimetypes.h"
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
 #include "gui/shortcutdialog.h"
+#include "gui/tabicons.h"
 #include "item/itemfactory.h"
 
 #include <QAction>
@@ -45,7 +46,7 @@ QStringList serializeShortcuts(const QList<QKeySequence> &shortcuts, bool enable
     QStringList shortcutTexts;
 
     foreach (const QKeySequence &shortcut, shortcuts)
-        shortcutTexts.append(shortcut.toString(QKeySequence::PortableText));
+        shortcutTexts.append(portableShortcutText(shortcut));
 
     if (!enabled && !shortcutTexts.isEmpty())
         shortcutTexts.append(globalShortcutsDisabled);
@@ -96,19 +97,9 @@ CommandWidget::CommandWidget(QWidget *parent)
     ui->checkBoxAutomatic->setIcon(iconClipboard());
     ui->checkBoxInMenu->setIcon(iconMenu());
 
-    ConfigurationManager *cm = ConfigurationManager::instance();
-
     // Add tab names to combo boxes.
-    cm->initTabComboBox(ui->comboBoxCopyToTab);
-    cm->initTabComboBox(ui->comboBoxOutputTab);
-
-    // Add formats to combo boxex.
-    QStringList formats = cm->itemFactory()->formatsToSave();
-    formats.prepend(mimeText);
-    formats.removeDuplicates();
-
-    setComboBoxItems(ui->comboBoxInputFormat, formats);
-    setComboBoxItems(ui->comboBoxOutputFormat, formats);
+    initTabComboBox(ui->comboBoxCopyToTab);
+    initTabComboBox(ui->comboBoxOutputTab);
 }
 
 CommandWidget::~CommandWidget()
@@ -175,6 +166,12 @@ void CommandWidget::setCommand(const Command &c)
     ui->comboBoxOutputTab->setEditText(c.outputTab);
 }
 
+void CommandWidget::setFormats(const QStringList &formats)
+{
+    setComboBoxItems(ui->comboBoxInputFormat, formats);
+    setComboBoxItems(ui->comboBoxOutputFormat, formats);
+}
+
 void CommandWidget::on_lineEditName_textChanged(const QString &name)
 {
     emit nameChanged(name);
@@ -233,6 +230,8 @@ void CommandWidget::updateWidgets()
     ui->groupBoxCommand->setVisible(copyOrExecute || globalShortcut);
     ui->groupBoxAction->setVisible(copyOrExecute);
     ui->groupBoxInMenu->setVisible(inMenu);
+    ui->shortcutButton->setEnabled(inMenu);
+    ui->labelShortcut->setEnabled(inMenu);
     ui->groupBoxCommandOptions->setHidden(!copyOrExecute || ui->commandEdit->isEmpty());
 
     ui->widgetSpacer->setVisible(ui->groupBoxCommand->isHidden());

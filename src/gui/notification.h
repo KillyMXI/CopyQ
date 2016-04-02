@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -39,6 +39,7 @@ protected:
     void setIcon(ushort icon);
     void setInterval(int msec);
     void setOpacity(qreal opacity);
+    void setClickToShowEnabled(bool enabled);
 
     void updateIcon();
 
@@ -70,7 +71,6 @@ private:
     QTimer m_timer;
     qreal m_opacity;
     ushort m_icon;
-    QString m_textToCopy;
 };
 
 #endif // NOTIFICATION_H

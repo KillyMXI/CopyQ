@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -97,6 +97,8 @@ public:
 
     bool isAborted() const { return m_abort; }
 
+    const QVariantMap &data() const { return m_data; }
+
 public slots:
     QScriptValue version();
     QScriptValue help();
@@ -104,7 +106,7 @@ public slots:
     void show();
     void showAt();
     void hide();
-    void toggle();
+    QScriptValue toggle();
     void menu();
     void exit();
     void disable();
@@ -166,12 +168,15 @@ public slots:
     QScriptValue str(const QScriptValue &value);
     QScriptValue input();
     QScriptValue data(const QScriptValue &value);
+    QScriptValue setData();
     void print(const QScriptValue &value);
     void abort();
     void fail();
 
     void keys();
     QScriptValue testSelected();
+
+    void setCurrentTab();
 
     QScriptValue selectItems();
     QScriptValue selectitems() { return selectItems(); }
@@ -217,6 +222,9 @@ public slots:
 
     QScriptValue networkGet();
     QScriptValue networkPost();
+
+    QScriptValue env();
+    QScriptValue setEnv();
 
 public slots:
     void setInput(const QByteArray &bytes);

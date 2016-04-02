@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,8 +24,6 @@
 #include "common/clientsocket.h"
 #include "common/commandstatus.h"
 #include "common/log.h"
-#include "gui/configurationmanager.h"
-#include "item/itemfactory.h"
 #include "../qt/bytearrayclass.h"
 
 #include <QApplication>
@@ -60,13 +58,14 @@ QByteArray serializeScriptValue(const QScriptValue &value)
 
 } // namespace
 
-ScriptableWorker::ScriptableWorker(MainWindow *mainWindow,
-                                   const Arguments &args, ClientSocket *socket)
+ScriptableWorker::ScriptableWorker(
+        MainWindow *mainWindow, const Arguments &args, ClientSocket *socket,
+        const QString &pluginScript)
     : QRunnable()
     , m_wnd(mainWindow)
     , m_args(args)
     , m_socket(socket)
-    , m_pluginScript(ConfigurationManager::instance()->itemFactory()->scripts())
+    , m_pluginScript(pluginScript)
 {
     if ( hasLogLevel(LogDebug) )
         m_id = m_socket->property("id").toString();
@@ -82,19 +81,19 @@ void ScriptableWorker::run()
             QString indent = isEval ? QString("EVAL:")
                                     : (QString::number(i - Arguments::Rest + 1) + " ");
             foreach (const QByteArray &line, m_args.at(i).split('\n')) {
-                SCRIPT_LOG( indent + QString::fromUtf8(line) );
+                SCRIPT_LOG( indent + getTextData(line) );
                 indent = "  ";
             }
         }
     }
 
-    bool ok;
-    const quintptr id = m_args.at(Arguments::ActionId).toULongLong(&ok);
+    bool hasData;
+    const quintptr id = m_args.at(Arguments::ActionId).toULongLong(&hasData);
     QVariantMap data;
-    if (ok)
+    if (hasData)
         data = Action::data(id);
 
-    const QString currentPath = QString::fromUtf8(m_args.at(Arguments::CurrentPath));
+    const QString currentPath = getTextData(m_args.at(Arguments::CurrentPath));
 
     QScriptEngine engine;
     ScriptableProxy proxy(m_wnd, data);
@@ -133,11 +132,11 @@ void ScriptableWorker::run()
         SCRIPT_LOG("Error: bad command syntax");
         exitCode = CommandBadSyntax;
     } else {
-        const QString cmd = QString::fromUtf8( m_args.at(Arguments::Rest) );
+        const QString cmd = getTextData( m_args.at(Arguments::Rest) );
 
 #ifdef HAS_TESTS
         if ( cmd == "flush" && m_args.length() == Arguments::Rest + 2 ) {
-            log( "flush ID: " + QString::fromUtf8(m_args.at(Arguments::Rest + 1)), LogAlways );
+            log( "flush ID: " + getTextData(m_args.at(Arguments::Rest + 1)), LogAlways );
             scriptable.sendMessageToClient(QByteArray(), CommandFinished);
             return;
         }
@@ -146,10 +145,9 @@ void ScriptableWorker::run()
         QScriptValue fn = engine.globalObject().property(cmd);
         if ( !fn.isFunction() ) {
             SCRIPT_LOG("Error: unknown command");
-            response = createLogMessage("CopyQ client",
-                                        Scriptable::tr("Name \"%1\" doesn't refer to a function.")
-                                        .arg(cmd),
-                                        LogError).toUtf8();
+            const QString msg =
+                    Scriptable::tr("Name \"%1\" doesn't refer to a function.").arg(cmd);
+            response = createLogMessage(msg, LogError).toUtf8();
             exitCode = CommandError;
         } else {
             /* Special arguments:
@@ -182,7 +180,7 @@ void ScriptableWorker::run()
                 SCRIPT_LOG( QString("Error: Exception in command \"%1\": %2")
                              .arg(cmd, exceptionText) );
 
-                response = createLogMessage("CopyQ client", exceptionText, LogError).toUtf8();
+                response = createLogMessage(exceptionText, LogError).toUtf8();
                 exitCode = CommandError;
             } else {
                 response = serializeScriptValue(result);
@@ -190,6 +188,9 @@ void ScriptableWorker::run()
             }
         }
     }
+
+    if (exitCode == CommandFinished && hasData)
+        Action::setData(id, scriptable.data());
 
     scriptable.sendMessageToClient(response, exitCode);
 

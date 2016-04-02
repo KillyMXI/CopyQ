@@ -44,6 +44,14 @@ const char optionMaximumHeight[] = "max_height";
 
 const char mimeRichText[] = "text/richtext";
 
+// Some applications insert \0 teminator at the end of text data.
+// It needs to be removed because QTextBrowser can render the character.
+void removeTrailingNull(QString *text)
+{
+    if ( text->endsWith(QChar(0)) )
+        text->chop(1);
+}
+
 bool getRichText(const QModelIndex &index, QString *text)
 {
     if ( index.data(contentType::hasHtml).toBool() ) {
@@ -58,10 +66,6 @@ bool getRichText(const QModelIndex &index, QString *text)
     const QByteArray data = dataMap[mimeRichText].toByteArray();
     *text = QString::fromUtf8(data);
 
-    // Remove trailing null character.
-    if ( text->endsWith(QChar(0)) )
-        text->resize(text->size() - 1);
-
     return true;
 }
 
@@ -73,6 +77,12 @@ bool getText(const QModelIndex &index, QString *text)
     }
 
     return false;
+}
+
+QString normalizeText(QString text)
+{
+    removeTrailingNull(&text);
+    return text.left(defaultMaxBytes);
 }
 
 } // namespace
@@ -97,9 +107,9 @@ ItemText::ItemText(const QString &text, bool isRichText, int maxLines, int maxim
     viewport()->installEventFilter(this);
 
     if (isRichText)
-        m_textDocument.setHtml( text.left(defaultMaxBytes) );
+        m_textDocument.setHtml( normalizeText(text) );
     else
-        m_textDocument.setPlainText( text.left(defaultMaxBytes) );
+        m_textDocument.setPlainText( normalizeText(text) );
 
     m_textDocument.setDocumentMargin(0);
 

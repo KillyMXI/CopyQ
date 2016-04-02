@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -44,6 +44,9 @@ bool needsUpdate(const Settings &newSettings, const QSettings &oldSettings)
 
 void copySettings(const QSettings &from, QSettings *to)
 {
+    Q_ASSERT(from.group().isEmpty());
+    Q_ASSERT(to->group().isEmpty());
+
     to->clear();
 
     foreach ( const QString &key, from.allKeys() )
@@ -87,11 +90,12 @@ bool Settings::canModifySettings()
 }
 
 Settings::Settings()
-    : QSettings(
+    : m_settings(
           QSettings::defaultFormat(),
           QSettings::UserScope,
           QCoreApplication::organizationName(),
           QCoreApplication::applicationName() + "-bak" )
+    , m_changed(false)
 {
     Q_ASSERT( isMainThread() );
 }
@@ -99,12 +103,14 @@ Settings::Settings()
 Settings::~Settings()
 {
     // Only main application is allowed to change settings.
-    if (canModifySettings()) {
-        sync();
+    if (canModifySettings() && m_changed) {
+        m_settings.sync();
 
         beginSave();
-        QSettings settings;
-        copySettings(*this, &settings);
+        QSettings to;
+        while ( !m_settings.group().isEmpty() )
+            m_settings.endGroup();
+        copySettings(m_settings, &to);
         endSave();
     }
 }
@@ -119,17 +125,17 @@ void Settings::restore()
     if ( isLastSaveUnfinished() ) {
         log("Restoring application settings", LogWarning);
 
-        if ( isEmpty(appSettings) ) {
+        if ( appSettings.isEmpty() ) {
             log("Cannot restore application settings", LogError);
         } else {
             QSettings settings;
-            copySettings(appSettings, &settings);
+            copySettings(appSettings.m_settings, &settings);
         }
 
         endSave();
     } else {
         const QSettings settings;
         if ( needsUpdate(appSettings, settings) )
-            copySettings(settings, &appSettings);
+            copySettings(settings, &appSettings.m_settings);
     }
 }

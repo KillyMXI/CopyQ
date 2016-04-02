@@ -72,6 +72,8 @@ quint32 QxtGlobalShortcutPrivate::nativeModifiers(Qt::KeyboardModifiers modifier
 
 quint32 QxtGlobalShortcutPrivate::nativeKeycode(Qt::Key key)
 {
+    // Here is list of keys that presumably work on most keyboard layouts.
+    // Default branch is for keys that can change with keyboard layout.
     switch (key)
     {
     case Qt::Key_Escape:
@@ -186,78 +188,15 @@ quint32 QxtGlobalShortcutPrivate::nativeKeycode(Qt::Key key)
     case Qt::Key_VolumeMute:
         return VK_VOLUME_MUTE;
 
-        // numbers
-    case Qt::Key_0:
-    case Qt::Key_1:
-    case Qt::Key_2:
-    case Qt::Key_3:
-    case Qt::Key_4:
-    case Qt::Key_5:
-    case Qt::Key_6:
-    case Qt::Key_7:
-    case Qt::Key_8:
-    case Qt::Key_9:
-        return key;
-
-        // letters
-    case Qt::Key_A:
-    case Qt::Key_B:
-    case Qt::Key_C:
-    case Qt::Key_D:
-    case Qt::Key_E:
-    case Qt::Key_F:
-    case Qt::Key_G:
-    case Qt::Key_H:
-    case Qt::Key_I:
-    case Qt::Key_J:
-    case Qt::Key_K:
-    case Qt::Key_L:
-    case Qt::Key_M:
-    case Qt::Key_N:
-    case Qt::Key_O:
-    case Qt::Key_P:
-    case Qt::Key_Q:
-    case Qt::Key_R:
-    case Qt::Key_S:
-    case Qt::Key_T:
-    case Qt::Key_U:
-    case Qt::Key_V:
-    case Qt::Key_W:
-    case Qt::Key_X:
-    case Qt::Key_Y:
-    case Qt::Key_Z:
-        return key;
-
-        // other symbols
-    case Qt::Key_Semicolon:
-    case Qt::Key_Colon:
-        return VK_OEM_1;
-    case Qt::Key_Equal:
-        return VK_OEM_PLUS;
-    case Qt::Key_Comma:
-        return VK_OEM_COMMA;
-    case Qt::Key_Period:
-        return VK_OEM_PERIOD;
-    case Qt::Key_Question:
-        return VK_OEM_2;
-    case Qt::Key_QuoteLeft:
-    case Qt::Key_AsciiTilde:
-        return VK_OEM_3;
-    case Qt::Key_BraceLeft:
-    case Qt::Key_BracketLeft:
-        return VK_OEM_4;
-    case Qt::Key_Bar:
-    case Qt::Key_Backslash:
-        return VK_OEM_5;
-    case Qt::Key_BraceRight:
-    case Qt::Key_BracketRight:
-        return VK_OEM_6;
-    case Qt::Key_QuoteDbl:
-    case Qt::Key_Apostrophe:
-        return VK_OEM_7;
-
     default:
-        return 0;
+        // Try to get virtual key from current keyboard layout or US.
+        const HKL layout = GetKeyboardLayout(0);
+        int vk = VkKeyScanEx(key, layout);
+        if (vk == -1) {
+            const HKL layoutUs = GetKeyboardLayout(0x409);
+            vk = VkKeyScanEx(key, layoutUs);
+        }
+        return vk == -1 ? 0 : vk;
     }
 }
 

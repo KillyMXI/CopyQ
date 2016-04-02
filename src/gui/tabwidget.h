@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,6 +24,7 @@
 #include <QMap>
 #include <QWidget>
 
+class QAbstractScrollArea;
 class QMainWindow;
 class QMimeData;
 class QPoint;
@@ -85,6 +86,8 @@ public:
     void loadTabInfo();
 
     void updateTabs();
+
+    QAbstractScrollArea *tabTree();
 
 public slots:
     void setCurrentIndex(int tabIndex);

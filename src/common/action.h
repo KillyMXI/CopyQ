@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -67,7 +67,7 @@ public:
     const QStringList &inputFormats() const { return m_inputFormats; }
 
     /** Return output format. */
-    QString outputFormat() const { return m_outputFormat; }
+    const QString &outputFormat() const { return m_outputFormat; }
     void setOutputFormat(const QString &outputItemFormat) { m_outputFormat = outputItemFormat; }
 
     /// Set separator for items on standard output.
@@ -102,8 +102,10 @@ public:
     QString errorString() const { return m_errorString; }
 
     void setData(const QVariantMap &data);
+    const QVariantMap &data() const;
 
     static QVariantMap data(quintptr id);
+    static void setData(quintptr id, const QVariantMap &data);
 
 public slots:
     /** Terminate (kill) process. */
@@ -124,6 +126,7 @@ signals:
                  const QString &outputTabName);
     void newItem(const QByteArray &data, const QString &format,
                  const QModelIndex &index);
+    void dataChanged(const QVariantMap &data);
 
 private slots:
     void actionError(QProcess::ProcessError error);

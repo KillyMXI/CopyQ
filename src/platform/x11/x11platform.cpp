@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,10 +19,11 @@
 
 #include "x11platform.h"
 
+#include "common/common.h"
+
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
-#include <QKeySequence>
 #include <QRegExp>
 #include <QVariant>
 #include <QWidget>
@@ -65,7 +66,7 @@ int copyq_xio_errhandler(Display *display)
 QString getDesktopFilename()
 {
     const char *path = getenv("XDG_CONFIG_HOME");
-    QString filename = path ? QString::fromUtf8(path) : QDir::homePath() + "/.config";
+    QString filename = path ? getTextData(path) : QDir::homePath() + "/.config";
     filename.append("/autostart/" + QCoreApplication::applicationName() + ".desktop");
     return filename;
 }
@@ -138,7 +139,7 @@ bool X11Platform::isAutostartEnabled()
     QRegExp re("^Hidden\\s*=\\s*([a-zA-Z01]+)");
 
     while ( !desktopFile.atEnd() ) {
-        QString line = QString::fromUtf8(desktopFile.readLine());
+        QString line = getTextData(desktopFile.readLine());
         if ( re.indexIn(line) != -1 ) {
             QString value = re.cap(1);
             return !(value.startsWith("True") || value.startsWith("true") || value.startsWith("0"));
@@ -178,10 +179,10 @@ void X11Platform::setAutostartEnabled(bool enable)
         return;
     }
 
-    QRegExp re("^Hidden\\s*=\\s*");
+    QRegExp re("^(Hidden|X-GNOME-Autostart-enabled)\\s*=\\s*");
 
     while ( !desktopFile.atEnd() ) {
-        QString line = QString::fromUtf8(desktopFile.readLine());
+        QString line = getTextData(desktopFile.readLine());
         QString cmd = "\"" + QApplication::applicationFilePath() + "\"";
         if ( line.startsWith("Exec=") ) {
             const QString sessionName = qApp->property("CopyQ_session_name").toString();
@@ -197,6 +198,11 @@ void X11Platform::setAutostartEnabled(bool enable)
 
     desktopFile2.write("Hidden=");
     desktopFile2.write(enable ? "False" : "True");
+    desktopFile2.write("\n");
+
+    desktopFile2.write("X-GNOME-Autostart-enabled=");
+    desktopFile2.write(enable ? "true" : "false");
+    desktopFile2.write("\n");
 
     QFile::remove(filename);
     desktopFile2.rename(filename);
@@ -227,24 +233,4 @@ PlatformClipboardPtr X11Platform::clipboard()
         return PlatformClipboardPtr();
 
     return PlatformClipboardPtr(new X11PlatformClipboard(d));
-}
-
-int X11Platform::keyCode(const QKeyEvent &event)
-{
-    if (d->display()) {
-        quint32 keyCode = event.nativeScanCode();
-
-        int keysyms_per_keycode_return;
-        KeySym *keysym = XGetKeyboardMapping(d->display(), keyCode, 1, &keysyms_per_keycode_return);
-        char *text = XKeysymToString(*keysym);
-        XFree(keysym);
-
-        if (text) {
-            const QKeySequence shortcut(text, QKeySequence::NativeText);
-            if (!shortcut.isEmpty())
-                return shortcut[0];
-        }
-    }
-
-    return PlatformNativeInterface::keyCode(event);
 }

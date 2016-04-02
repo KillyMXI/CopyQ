@@ -29,13 +29,59 @@
 
 #include "filterlineedit.h"
 
-#include "gui/configurationmanager.h"
+#include "common/appconfig.h"
+#include "common/config.h"
+#include "gui/iconfactory.h"
 #include "gui/icons.h"
 #include "gui/filtercompleter.h"
 
 #include <QMenu>
 #include <QPainter>
+#include <QSettings>
 #include <QTimer>
+
+namespace {
+
+const char optionFilterHistory[] = "filter_history";
+
+class FilterHistory {
+public:
+    FilterHistory()
+        : m_settings( getConfigurationFilePath("-filter.ini"), QSettings::IniFormat )
+    {
+    }
+
+    QStringList history() const
+    {
+        return m_settings.value(optionFilterHistory).toStringList();
+    }
+
+    void setHistory(const QStringList &history)
+    {
+        m_settings.setValue(optionFilterHistory, history);
+    }
+
+private:
+    QSettings m_settings;
+};
+
+// Compatibility with version 2.5.0 and below
+void restoreOldFilterHistory()
+{
+    const QVariant oldHistoryValue = AppConfig().option(optionFilterHistory);
+    if (oldHistoryValue.isValid()) {
+        const QStringList oldHistory = oldHistoryValue.toStringList();
+        if (!oldHistory.isEmpty()) {
+            FilterHistory filterHistory;
+            QStringList newHistory = filterHistory.history() + oldHistory;
+            newHistory.removeDuplicates();
+            filterHistory.setHistory(newHistory);
+        }
+        AppConfig().removeOption(optionFilterHistory);
+    }
+}
+
+} // namespace
 
 /*!
     \class Utils::FilterLineEdit
@@ -97,15 +143,13 @@ QRegExp FilterLineEdit::filter() const
 
 void FilterLineEdit::loadSettings()
 {
-    ConfigurationManager *cm = ConfigurationManager::instance();
+    AppConfig appConfig;
 
-    QVariant val;
+    const bool filterRegEx = appConfig.option("filter_regular_expression", true);
+    m_actionRe->setChecked(filterRegEx);
 
-    val = cm->value("filter_regular_expression");
-    m_actionRe->setChecked(!val.isValid() || val.toBool());
-
-    val = cm->value("filter_case_insensitive");
-    m_actionCaseInsensitive->setChecked(!val.isValid() || val.toBool());
+    const bool filterCaseSensitive = appConfig.option("filter_case_insensitive", true);
+    m_actionCaseInsensitive->setChecked(filterCaseSensitive);
 
     // KDE has custom icons for this. Notice that icon namings are counter intuitive.
     // If these icons are not available we use the freedesktop standard name before
@@ -118,14 +162,15 @@ void FilterLineEdit::loadSettings()
     QIcon icon2 = getIcon("edit-find", IconSearch);
     setButtonIcon(Left, icon2);
 
-    if ( cm->value("save_filter_history").toBool() ) {
+    if ( appConfig.option("save_filter_history").toBool() ) {
         if ( !completer() ) {
             FilterCompleter::installCompleter(this);
-            completer()->setProperty( "history", cm->value("filter_history") );
+            restoreOldFilterHistory();
+            completer()->setProperty( "history", FilterHistory().history() );
         }
     } else {
         FilterCompleter::removeCompleter(this);
-        cm->setValue("filter_history", QString());
+        FilterHistory().setHistory(QStringList());
     }
 }
 
@@ -134,9 +179,8 @@ void FilterLineEdit::hideEvent(QHideEvent *event)
     FancyLineEdit::hideEvent(event);
 
     if (completer()) {
-        ConfigurationManager *cm = ConfigurationManager::instance();
         const QStringList history = completer()->property("history").toStringList();
-        cm->setValue("filter_history", history);
+        FilterHistory().setHistory(history);
     }
 }
 
@@ -147,9 +191,9 @@ void FilterLineEdit::onTextChanged()
 
 void FilterLineEdit::onMenuAction()
 {
-    ConfigurationManager *cm = ConfigurationManager::instance();
-    cm->setValue("filter_regular_expression", m_actionRe->isChecked());
-    cm->setValue("filter_case_insensitive", m_actionCaseInsensitive->isChecked());
+    AppConfig appConfig;
+    appConfig.setOption("filter_regular_expression", m_actionRe->isChecked());
+    appConfig.setOption("filter_case_insensitive", m_actionCaseInsensitive->isChecked());
 
     const QRegExp re = filter();
     if ( !re.isEmpty() )

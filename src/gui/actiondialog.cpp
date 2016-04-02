@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,13 +20,14 @@
 #include "actiondialog.h"
 #include "ui_actiondialog.h"
 
+#include "common/appconfig.h"
 #include "common/action.h"
 #include "common/command.h"
 #include "common/common.h"
 #include "common/config.h"
 #include "common/mimetypes.h"
 #include "item/serialize.h"
-#include "gui/configurationmanager.h"
+#include "gui/windowgeometryguard.h"
 
 #include <QFile>
 #include <QMessageBox>
@@ -86,7 +87,7 @@ ActionDialog::ActionDialog(QWidget *parent)
     on_comboBoxOutputFormat_editTextChanged(QString());
     loadSettings();
 
-    ConfigurationManager::instance()->registerWindowGeometry(this);
+    WindowGeometryGuard::create(this);
 }
 
 ActionDialog::~ActionDialog()
@@ -106,9 +107,7 @@ void ActionDialog::setInputData(const QVariantMap &data)
 
 void ActionDialog::restoreHistory()
 {
-    ConfigurationManager *cm = ConfigurationManager::instance();
-
-    int maxCount = cm->value("command_history_size").toInt();
+    const int maxCount = AppConfig().option<Config::command_history_size>();
     ui->comboBoxCommands->setMaxCount(maxCount);
 
     QFile file( dataFilename() );
@@ -169,7 +168,7 @@ void ActionDialog::createAction()
 
     QScopedPointer<Action> act( new Action() );
     act->setCommand(cmd, m_capturedTexts);
-    if (input.isEmpty())
+    if (input.isEmpty() && !inputFormat.isEmpty())
         act->setInput(m_data, inputFormat);
     else
         act->setInput(input.toUtf8());

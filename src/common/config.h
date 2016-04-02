@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,18 +20,24 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-class QString;
 class QByteArray;
+class QString;
+class QVariant;
 class QWidget;
 
 QString getConfigurationFilePath(const QString &suffix);
 
 QString settingsDirectoryPath();
 
-QByteArray geometryOptionValue(const QString &optionName);
+QVariant geometryOptionValue(const QString &optionName);
+void setGeometryOptionValue(const QString &optionName, const QVariant &value);
 
 void restoreWindowGeometry(QWidget *w, bool openOnCurrentScreen);
 
 void saveWindowGeometry(QWidget *w, bool openOnCurrentScreen);
+
+QByteArray mainWindowState(const QString &mainWindowObjectName);
+
+void saveMainWindowState(const QString &mainWindowObjectName, const QByteArray &state);
 
 #endif // CONFIG_H

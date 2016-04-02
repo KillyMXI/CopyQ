@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -111,8 +111,12 @@ private slots:
 
     void executeCommand();
 
+    void settingsCommand();
+
     void fileClass();
     void dirClass();
+
+    void setEnvCommand();
 
 private:
     void clearServerErrors();

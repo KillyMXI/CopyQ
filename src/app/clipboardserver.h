@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -34,6 +34,7 @@
 
 class Arguments;
 class ClientSocket;
+class ItemFactory;
 class RemoteProcess;
 class QxtGlobalShortcut;
 class QSessionManager;
@@ -118,8 +119,6 @@ private slots:
     /** Quit application, but ask to cancel exit if there are any active commands. */
     void maybeQuit();
 
-    void onIgnoreKeysTimeout();
-
 private:
     /** Ask to cancel application exit if there are any active commands. */
     bool askToQuit();
@@ -131,6 +130,7 @@ private:
     QMap<QxtGlobalShortcut*, Command> m_shortcutActions;
     QThreadPool m_clientThreads;
     QTimer m_ignoreKeysTimer;
+    ItemFactory *m_itemFactory;
 };
 
 #endif // CLIPBOARDSERVER_H

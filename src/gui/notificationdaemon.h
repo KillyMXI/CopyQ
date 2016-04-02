@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -49,12 +49,14 @@ public:
     explicit NotificationDaemon(QObject *parent = NULL);
 
     /** Create new notification or update one with same @a id (if non-negative). */
-    void create(const QString &title, const QString &msg, ushort icon,
-                int msec, int id = -1);
+    void create(
+            const QString &title, const QString &msg, ushort icon,
+            int msec, bool clickToShow, int id = -1);
 
     /** Create new notification or update one with same @a id (if non-negative). */
-    void create(const QVariantMap &data, int maxLines, ushort icon,
-                int msec, int id = -1);
+    void create(
+            const QVariantMap &data, int maxLines, ushort icon,
+            int msec, bool clickToShow, int id = -1);
 
     /** Update interval to show notification with given @a id. */
     void updateInterval(int id, int msec);

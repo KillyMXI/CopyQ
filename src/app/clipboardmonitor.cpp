@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -65,7 +65,7 @@ ClipboardMonitor::ClipboardMonitor(int &argc, char **argv)
 
 #ifdef HAS_TESTS
     if ( serverName == QString("copyq_TEST") )
-        QCoreApplication::instance()->setProperty("CopyQ_testing", true);
+        qApp->setProperty("CopyQ_testing", true);
 #endif
 
     if ( !startClientSocket(serverName, argc, argv) )
@@ -82,8 +82,12 @@ void ClipboardMonitor::onClipboardChanged(PlatformClipboard::Mode mode)
         return;
     }
 
-    if (mode != PlatformClipboard::Clipboard)
-        data.insert(mimeClipboardMode, PlatformClipboard::Selection ? "selection" : "find buffer");
+    if (mode != PlatformClipboard::Clipboard) {
+        const QString modeName = mode == PlatformClipboard::Selection
+                ? "selection"
+                : "find buffer";
+        data.insert(mimeClipboardMode, modeName);
+    }
 
     // add window title of clipboard owner
     if ( !data.contains(mimeOwner) && !data.contains(mimeWindowTitle) ) {

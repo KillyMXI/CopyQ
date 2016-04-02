@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -25,8 +25,10 @@
 #include "common/log.h"
 #include "common/mimetypes.h"
 #include "common/settings.h"
-#include "gui/configurationmanager.h"
+#include "gui/filedialog.h"
 #include "gui/mainwindow.h"
+#include "gui/tabicons.h"
+#include "gui/windowgeometryguard.h"
 #include "item/serialize.h"
 #include "platform/platformnativeinterface.h"
 
@@ -181,7 +183,7 @@ QWidget *createFileNameEdit(const QString &name, const QFile &file, QWidget *par
 
     QPushButton *browseButton = new QPushButton("...");
 
-    QFileDialog *dialog = new QFileDialog(w, name, file.fileName());
+    FileDialog *dialog = new FileDialog(w, name, file.fileName());
     QObject::connect( browseButton, SIGNAL(clicked()),
                       dialog, SLOT(exec()) );
     QObject::connect( dialog, SIGNAL(fileSelected(QString)),
@@ -231,80 +233,27 @@ QWidget *createWidget(const QString &name, const QVariant &value, QWidget *paren
     }
 }
 
-QVariant config(const QString &name, const QString &value)
+void setGeometryWithoutSave(QWidget *window, const QRect &geometry)
 {
-    ConfigurationManager *cm = ConfigurationManager::instance();
+    WindowGeometryGuard::blockUntilHidden(window);
 
-    if ( name.isNull() ) {
-        // print options
-        QStringList options = cm->options();
-        options.sort();
-        QString opts;
-        foreach (const QString &option, options)
-            opts.append( option + "\n  " + cm->optionToolTip(option).replace('\n', "\n  ") + '\n' );
-        return opts;
+    int x = pointsToPixels(geometry.x());
+    int y = pointsToPixels(geometry.y());
+    if (x < 0 || y < 0) {
+        const QPoint mousePos = QCursor::pos();
+        if (geometry.x() < 0)
+            x = mousePos.x();
+        if (geometry.y() < 0)
+            y = mousePos.y();
     }
 
-    if ( cm->options().contains(name) ) {
-        if ( value.isNull() )
-            return cm->value(name).toString(); // return option value
+    const int w = pointsToPixels(geometry.width());
+    const int h = pointsToPixels(geometry.height());
+    if (w > 0 && h > 0)
+        window->resize(w, h);
 
-        // set option
-        cm->setValue(name, value);
-
-        return QString();
-    }
-
-    return QVariant();
+    moveWindowOnScreen(window, QPoint(x, y));
 }
-
-class WindowGeometryGuard : public QObject {
-public:
-    static void create(QWidget *window, const QRect &rect)
-    {
-        new WindowGeometryGuard(window, rect);
-    }
-
-    bool eventFilter(QObject *, QEvent *event)
-    {
-       if (event->type() == QEvent::Hide || event->type() == QEvent::FocusOut)
-           deleteLater();
-       return false;
-    }
-
-private:
-    WindowGeometryGuard(QWidget *window, const QRect &rect)
-        : QObject(window)
-        , m_window(window)
-    {
-        int x = pointsToPixels(rect.x());
-        int y = pointsToPixels(rect.y());
-        if (x < 0 || y < 0) {
-            const QPoint mousePos = QCursor::pos();
-            if (rect.x() < 0)
-                x = mousePos.x();
-            if (rect.y() < 0)
-                y = mousePos.y();
-        }
-
-        m_window->setProperty("CopyQ_ignore_geometry_changes", true);
-
-        const int w = pointsToPixels(rect.width());
-        const int h = pointsToPixels(rect.height());
-        if (w > 0 && h > 0)
-            m_window->resize(w, h);
-        moveWindowOnScreen(m_window, QPoint(x, y));
-
-        m_window->installEventFilter(this);
-    }
-
-    ~WindowGeometryGuard()
-    {
-        m_window->setProperty("CopyQ_ignore_geometry_changes", false);
-    }
-
-    QWidget *m_window;
-};
 
 } // namespace
 
@@ -362,7 +311,7 @@ void ScriptableProxyHelper::showWindow()
 
 void ScriptableProxyHelper::showWindowAt(const QRect &rect)
 {
-    WindowGeometryGuard::create(m_wnd, rect);
+    setGeometryWithoutSave(m_wnd, rect);
     showWindow();
 }
 
@@ -458,7 +407,7 @@ QString ScriptableProxyHelper::removeTab(const QString &arg1)
 QString ScriptableProxyHelper::tabIcon(const QString &tabName)
 {
     INVOKE(tabIcon(tabName));
-    return ConfigurationManager::instance()->getIconNameForTabName(tabName);
+    return getIconNameForTabName(tabName);
 }
 
 void ScriptableProxyHelper::setTabIcon(const QString &tabName, const QString &icon)
@@ -475,8 +424,9 @@ void ScriptableProxyHelper::showBrowser(const QString &tabName)
 
 void ScriptableProxyHelper::showBrowserAt(const QString &tabName, const QRect &rect)
 {
-    WindowGeometryGuard::create(m_wnd, rect);
+    setGeometryWithoutSave(m_wnd, rect);
     showBrowser(tabName);
+    QCoreApplication::processEvents();
 }
 
 void ScriptableProxyHelper::showBrowser()
@@ -626,10 +576,22 @@ bool ScriptableProxyHelper::saveTab(const QString &arg1)
     return m_wnd->saveTab(arg1, i);
 }
 
-QVariant ScriptableProxyHelper::config(const QString &arg1, const QString &arg2)
+QVariant ScriptableProxyHelper::config(const QString &name, const QString &value)
 {
-    INVOKE(config(arg1, arg2));
-    return ::config(arg1, arg2);
+    INVOKE(config(name, value));
+
+    if ( name.isNull() )
+        return m_wnd->getUserOptionsDescription();
+
+    if ( m_wnd->hasUserOption(name) ) {
+        if ( value.isNull() )
+            return m_wnd->getUserOptionValue(name);
+
+        m_wnd->setUserOptionValue(name, value);
+        return QString();
+    }
+
+    return QVariant();
 }
 
 QByteArray ScriptableProxyHelper::getClipboardData(const QString &mime, QClipboard::Mode mode)
@@ -710,10 +672,17 @@ QVariantMap ScriptableProxyHelper::browserItemData(int arg1)
 
 void ScriptableProxyHelper::setCurrentTab(const QString &tabName)
 {
+    ClipboardBrowser *c = fetchBrowser(tabName);
+    if (c)
+        m_wnd->setCurrentTab(c);
+}
+
+void ScriptableProxyHelper::setTab(const QString &tabName)
+{
     m_tabName = tabName;
 }
 
-QString ScriptableProxyHelper::currentTab()
+QString ScriptableProxyHelper::tab()
 {
     BROWSER_INVOKE(tabName(), QString());
 }
@@ -759,9 +728,7 @@ QList<int> ScriptableProxyHelper::selectedItems()
         return QList<int>();
 
     QList<int> selectedRows;
-    const QList<QPersistentModelIndex> selected =
-            m_actionData.value(mimeSelectedItems)
-            .value< QList<QPersistentModelIndex> >();
+    const QList<QPersistentModelIndex> selected = selectedIndexes();
     foreach (const QPersistentModelIndex &index, selected) {
         if (index.isValid())
             selectedRows.append(index.row());
@@ -993,6 +960,19 @@ void ScriptableProxyHelper::updateTitle(const QVariantMap &data)
         m_wnd->updateTitle(data);
 }
 
+void ScriptableProxyHelper::setSelectedItemsData(const QString &mime, const QVariant &value)
+{
+    const QList<QPersistentModelIndex> selected = selectedIndexes();
+    foreach (const QPersistentModelIndex &index, selected) {
+        ClipboardBrowser *c = m_wnd->browserForItem(index);
+        if (c) {
+            QVariantMap data = c->model()->data(index, contentType::data).toMap();
+            data[mime] = value;
+            c->model()->setData(index, data, contentType::data);
+        }
+    }
+}
+
 void ScriptableProxyHelper::filter(const QString &text)
 {
     m_wnd->setFilter(text);
@@ -1006,7 +986,7 @@ ClipboardBrowser *detail::ScriptableProxyHelper::fetchBrowser(const QString &tab
             return fetchBrowser(defaultTabName);
     }
 
-    ClipboardBrowser *c = tabName.isEmpty() ? m_wnd->browser(0) : m_wnd->createTab(tabName);
+    ClipboardBrowser *c = tabName.isEmpty() ? m_wnd->browser(0) : m_wnd->tab(tabName);
     if (!c)
         return NULL;
 
@@ -1041,6 +1021,12 @@ bool ScriptableProxyHelper::canUseSelectedItems() const
 {
     return m_tabName.isEmpty()
             || m_tabName == m_actionData.value(mimeCurrentTab).toString();
+}
+
+QList<QPersistentModelIndex> ScriptableProxyHelper::selectedIndexes() const
+{
+    return m_actionData.value(mimeSelectedItems)
+            .value< QList<QPersistentModelIndex> >();
 }
 
 } // namespace detail

@@ -1,3 +1,34 @@
+v2.6.1
+- Moved configuration from registry on Windows
+- Fixed shortcuts on Windows
+- Fixed window geometry restoring
+
+v2.6.0
+- Show item notes in tray and window title
+- Removed broken console executable on Windows
+- Dutch translation
+- Added env() and setEnv() to access and modify environment variables
+- Access shortcut which activated command
+- Fixed closing the application at shutdown on Windows
+- Fixed some global shortcuts on Windows
+- Fixed capturing some shortcuts
+
+v2.5.0
+- Smarter tab name matching (ignore key hints '&')
+- Fixed omit passing global shortcuts to widgets
+- Fixed autostart option on Ubuntu
+- Fixed window geometry saving and restoring
+- Fixed reading binary input on Windows
+- Fixed clearing configuration
+
+v2.4.9
+- Added new light theme
+- Added scriptable function focused() to test main window focus
+- Customizable shortcuts for tab navigation
+- Extended item selection
+- Fixed tab expiration and updating context menu
+- Fixed passing text to command from action dialog
+
 v2.4.8
 - New command to show main window under mouse cursor or at a position with custom size
 - Hide clipboard content when "application/x-copyq-hidden" is "1"

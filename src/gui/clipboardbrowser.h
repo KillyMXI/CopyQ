@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -34,8 +34,10 @@
 #include <QVariantMap>
 
 class ItemEditorWidget;
+class ItemFactory;
 class QProgressBar;
 class QPushButton;
+class Theme;
 
 enum SelectAction {
     NoSelectAction,
@@ -46,7 +48,7 @@ Q_DECLARE_FLAGS(SelectActions, SelectAction)
 Q_DECLARE_OPERATORS_FOR_FLAGS(SelectActions)
 
 struct ClipboardBrowserShared {
-    ClipboardBrowserShared();
+    explicit ClipboardBrowserShared(ItemFactory *itemFactory);
 
     void loadFromConfiguration();
 
@@ -57,6 +59,8 @@ struct ClipboardBrowserShared {
     bool saveOnReturnKey;
     bool moveItemOnReturnKey;
     int minutesToExpire;
+
+    ItemFactory *itemFactory;
 };
 typedef QSharedPointer<ClipboardBrowserShared> ClipboardBrowserSharedPtr;
 
@@ -80,8 +84,7 @@ class ClipboardBrowser : public QListView
                 QPointer<ClipboardBrowser> c;
         };
 
-        explicit ClipboardBrowser(QWidget *parent = NULL,
-                                  const ClipboardBrowserSharedPtr &sharedData = ClipboardBrowserSharedPtr());
+        explicit ClipboardBrowser(const ClipboardBrowserSharedPtr &sharedData, QWidget *parent = NULL);
         /** Close all external editors and save items if needed. */
         ~ClipboardBrowser();
         /** Load settings. */
@@ -131,11 +134,6 @@ class ClipboardBrowser : public QListView
          * @return true only if editor was closed
          */
         bool maybeCloseEditor();
-
-        /**
-         * Handle key for Vi mode.
-         */
-        bool handleViKey(QKeyEvent *event);
 
         /**
          * Get data of selected item, NULL if none or multiple items selected.
@@ -240,6 +238,9 @@ class ClipboardBrowser : public QListView
         void otherItemLoader(bool next);
 
         void move(int key);
+
+        /// Decorate browser and items with @a theme.
+        void decorate(const Theme &theme);
 
     public slots:
         /**
@@ -413,7 +414,7 @@ class ClipboardBrowser : public QListView
 
         void refilterItems();
 
-        ItemLoaderInterfacePtr m_itemLoader;
+        ItemLoaderInterface *m_itemLoader;
         QString m_tabName;
         int m_lastFiltered;
         ClipboardModel m;

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,13 +19,15 @@
 
 #include "gui/notification.h"
 
+#include "common/appconfig.h"
 #include "common/common.h"
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
+#include "gui/windowgeometryguard.h"
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDialog>
 #include <QDialogButtonBox>
 #include <QGridLayout>
 #include <QIcon>
@@ -40,34 +42,35 @@
 
 namespace {
 
-void showNotificationInspectDialog(const QString &messageTitle, const QString &message)
+void showNotificationInspectDialog(
+        const QString &messageTitle, const QString &message, Qt::TextFormat format)
 {
     QScopedPointer<QDialog> dialog(new QDialog);
     dialog->setObjectName("InspectNotificationDialog");
     dialog->setWindowTitle( Notification::tr("CopyQ Inspect Notification") );
 
-    ConfigurationManager *cm = ConfigurationManager::instance();
-    cm->registerWindowGeometry( dialog.data() );
+    WindowGeometryGuard::create( dialog.data() );
 
-    if ( cm->value("always_on_top").toBool() )
+    if ( AppConfig().isOptionOn("always_on_top") )
         dialog->setWindowFlags( dialog->windowFlags() ^ Qt::WindowStaysOnTopHint );
 
-    IconFactory *iconFactory = cm->iconFactory();
-    dialog->setWindowIcon( iconFactory->appIcon() );
+    dialog->setWindowIcon( appIcon() );
 
     QTextEdit *editor = new QTextEdit(dialog.data());
     editor->setReadOnly(true);
-    editor->setText(
-        "<h3>" + escapeHtml(messageTitle) + "</h3>"
-        "<p>" + escapeHtml(message) + "</p>"
-        );
+    const QString title = escapeHtml(messageTitle);
+    const QString body = format == Qt::PlainText
+            ? escapeHtml(message)
+            : message;
+    editor->setHtml( QString("<h3>%1</h3><p>%2</p>")
+                     .arg(title, body) );
 
     QDialogButtonBox *buttons = new QDialogButtonBox(
                 QDialogButtonBox::Close, Qt::Horizontal, dialog.data() );
     QObject::connect( buttons, SIGNAL(rejected()), dialog.data(), SLOT(close()) );
 
     QPushButton *copyButton = new QPushButton( Notification::tr("&Copy"), buttons );
-    const QIcon icon = iconFactory->getIcon("clipboard", IconPaste);
+    const QIcon icon = getIcon("clipboard", IconPaste);
     copyButton->setIcon(icon);
     QObject::connect( copyButton, SIGNAL(clicked()), editor, SLOT(selectAll()) );
     QObject::connect( copyButton, SIGNAL(clicked()), editor, SLOT(copy()) );
@@ -139,9 +142,6 @@ void Notification::setMessage(const QString &msg, Qt::TextFormat format)
 {
     m_msgLabel->setTextFormat(format);
     m_msgLabel->setText(msg);
-
-    m_textToCopy = (format == Qt::PlainText) ? msg : QString();
-    m_tipLabel->setVisible( !m_textToCopy.isEmpty() );
 }
 
 void Notification::setPixmap(const QPixmap &pixmap)
@@ -170,12 +170,16 @@ void Notification::setOpacity(qreal opacity)
     setWindowOpacity(m_opacity);
 }
 
+void Notification::setClickToShowEnabled(bool enabled)
+{
+    m_tipLabel->setVisible(enabled);
+}
+
 void Notification::updateIcon()
 {
     const QColor color = getDefaultIconColor(*this);
-    IconFactory *iconFactory = ConfigurationManager::instance()->iconFactory();
     const int height = m_msgLabel->fontMetrics().lineSpacing() * 1.2;
-    const QPixmap pixmap = iconFactory->createPixmap(m_icon, color, height);
+    const QPixmap pixmap = createPixmap(m_icon, color, height);
     m_iconLabel->setPixmap(pixmap);
     m_iconLabel->resize(pixmap.size());
 }
@@ -188,8 +192,10 @@ void Notification::adjust()
 
 void Notification::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() != Qt::LeftButton && !m_textToCopy.isEmpty() )
-        showNotificationInspectDialog(m_titleLabel->text(), m_textToCopy);
+    if ( event->button() != Qt::LeftButton && m_tipLabel->isVisible() ) {
+        showNotificationInspectDialog(
+                    m_titleLabel->text(), m_msgLabel->text(), m_msgLabel->textFormat());
+    }
 
     m_timer.stop();
 

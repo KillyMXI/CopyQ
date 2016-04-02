@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,13 +19,13 @@
 
 #include "actionhandler.h"
 
+#include "common/appconfig.h"
 #include "common/action.h"
 #include "common/common.h"
 #include "common/contenttype.h"
 #include "common/log.h"
 #include "common/mimetypes.h"
 #include "gui/actiondialog.h"
-#include "gui/configurationmanager.h"
 #include "gui/processmanagerdialog.h"
 #include "gui/clipboardbrowser.h"
 #include "gui/mainwindow.h"
@@ -39,7 +39,6 @@ ActionHandler::ActionHandler(MainWindow *mainWindow)
     , m_wnd(mainWindow)
     , m_actionCounter(0)
     , m_activeActionDialog(new ProcessManagerDialog(mainWindow))
-    , m_hasRunningAction(false)
 {
     Q_ASSERT(mainWindow);
 }
@@ -108,11 +107,7 @@ void ActionHandler::action(Action *action)
 void ActionHandler::actionStarted(Action *action)
 {
     m_activeActionDialog->actionStarted(action);
-
-    if (!m_hasRunningAction) {
-        m_hasRunningAction = true;
-        emit hasRunningActionChanged();
-    }
+    emit runningActionsCountChanged();
 }
 
 void ActionHandler::closeAction(Action *action)
@@ -128,7 +123,7 @@ void ActionHandler::closeAction(Action *action)
         msg += tr("Exit code: %1\n").arg(action->exitCode()) + action->errorOutput();
         icon = QSystemTrayIcon::Warning;
     } else if ( !action->inputFormats().isEmpty() ) {
-        QModelIndex index = action->index();
+        const QModelIndex index = action->index();
         ClipboardBrowser *c = m_wnd->browserForItem(index);
         if (c) {
             QStringList removeFormats = action->inputFormats();
@@ -141,7 +136,7 @@ void ActionHandler::closeAction(Action *action)
 
     if ( !msg.isEmpty() ) {
         const int maxWidthPoints =
-                ConfigurationManager::instance()->value("notification_maximum_width").toInt();
+                AppConfig().option<Config::notification_maximum_width>();
         const QString command = action->command()
                 .replace("copyq eval --", "copyq:");
         const QString name = QString(command).replace('\n', " ");
@@ -155,10 +150,7 @@ void ActionHandler::closeAction(Action *action)
     Q_ASSERT(m_actionCounter > 0);
     --m_actionCounter;
 
-    m_hasRunningAction = hasRunningAction();
-
-    if (!m_hasRunningAction)
-        emit hasRunningActionChanged();
+    emit runningActionsCountChanged();
 
     action->deleteLater();
 }
@@ -170,7 +162,7 @@ void ActionHandler::actionDialogClosed(ActionDialog *dialog)
 
 void ActionHandler::addItems(const QStringList &items, const QString &tabName)
 {
-    ClipboardBrowser *c = tabName.isEmpty() ? m_wnd->browser() : m_wnd->createTab(tabName);
+    ClipboardBrowser *c = tabName.isEmpty() ? m_wnd->browser() : m_wnd->tab(tabName);
     ClipboardBrowser::Lock lock(c);
     foreach (const QString &item, items)
         c->add(item);
@@ -195,7 +187,7 @@ void ActionHandler::addItems(const QStringList &items, const QModelIndex &index)
 
 void ActionHandler::addItem(const QByteArray &data, const QString &format, const QString &tabName)
 {
-    ClipboardBrowser *c = tabName.isEmpty() ? m_wnd->browser() : m_wnd->createTab(tabName);
+    ClipboardBrowser *c = tabName.isEmpty() ? m_wnd->browser() : m_wnd->tab(tabName);
     c->add( createDataMap(format, data) );
 
     if (m_lastAction) {

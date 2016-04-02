@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,8 +20,8 @@
 #include "tabbar.h"
 
 #include "common/mimetypes.h"
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
+#include "gui/tabicons.h"
 
 #include <QIcon>
 #include <QMimeData>
@@ -53,7 +53,7 @@ int tabIndex(const QString &tabName, const QTabBar &parent)
 
 void updateTabIcon(int i, QTabBar *parent)
 {
-    const QIcon icon = ConfigurationManager::instance()->getIconForTabName(parent->tabText(i));
+    const QIcon icon = getIconForTabName(parent->tabText(i));
     parent->setTabIcon(i, icon);
 }
 

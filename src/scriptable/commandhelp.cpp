@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -90,8 +90,8 @@ QList<CommandHelp> commandHelp()
                .addArg(Scriptable::tr("DATA"))
                .addArg("[" + Scriptable::tr("MIME") + " " + Scriptable::tr("DATA") + "]...")
             << CommandHelp()
-            << CommandHelp("length, count, size",
-                           Scriptable::tr("Print number of items in history."))
+            << CommandHelp("count",
+                           Scriptable::tr("Print amount of items in current tab."))
             << CommandHelp("select",
                            Scriptable::tr("Copy item in the row to clipboard."))
                .addArg("[" + Scriptable::tr("ROW") + "=0]")
@@ -112,7 +112,7 @@ QList<CommandHelp> commandHelp()
             << CommandHelp("edit",
                            Scriptable::tr("Edit items or edit new one.\n"
                                           "Value -1 is for current text in clipboard."))
-               .addArg("[" + Scriptable::tr("ROWS") + "...]")
+               .addArg("[" + Scriptable::tr("ROW") + "=-1...]")
             << CommandHelp()
             << CommandHelp("separator",
                            Scriptable::tr("Set separator for items on output."))

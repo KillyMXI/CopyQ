@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -54,7 +54,8 @@ NotificationDaemon::NotificationDaemon(QObject *parent)
     initSingleShotTimer( &m_timerUpdate, 100, this, SLOT(doUpdateNotifications()) );
 }
 
-void NotificationDaemon::create(const QString &title, const QString &msg, ushort icon, int msec, int id)
+void NotificationDaemon::create(
+        const QString &title, const QString &msg, ushort icon, int msec, bool clickToShow, int id)
 {
     Notification *notification = createNotification(id);
 
@@ -62,11 +63,13 @@ void NotificationDaemon::create(const QString &title, const QString &msg, ushort
     notification->setIcon(icon);
     notification->setMessage(msg);
     notification->setInterval(msec);
+    notification->setClickToShowEnabled(clickToShow);
 
     updateNotifications();
 }
 
-void NotificationDaemon::create(const QVariantMap &data, int maxLines, ushort icon, int msec, int id)
+void NotificationDaemon::create(
+        const QVariantMap &data, int maxLines, ushort icon, int msec, bool clickToShow, int id)
 {
     Notification *notification = createNotification(id);
 
@@ -111,6 +114,7 @@ void NotificationDaemon::create(const QVariantMap &data, int maxLines, ushort ic
     }
 
     notification->setInterval(msec);
+    notification->setClickToShowEnabled(clickToShow);
 
     updateNotifications();
 }

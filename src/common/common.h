@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -29,6 +29,8 @@
 class QAction;
 class QByteArray;
 class QIODevice;
+class QKeyEvent;
+class QKeySequence;
 class QMimeData;
 class QPoint;
 class QString;
@@ -60,6 +62,8 @@ const QMimeData *clipboardData(QClipboard::Mode mode = QClipboard::Clipboard);
 uint hash(const QVariantMap &data);
 
 QByteArray getUtf8Data(const QMimeData &data, const QString &format);
+
+QString getTextData(const QByteArray &data);
 
 /**
  * Get given text format from data; null string if not available.
@@ -131,6 +135,8 @@ QString textLabelForData(const QVariantMap &data, const QFont &font = QFont(),
  */
 QString shortcutToRemove();
 
+QString portableShortcutText(const QKeySequence &shortcut);
+
 QString toPortableShortcutText(const QString &shortcutNativeText);
 
 void renameToUnique(QString *name, const QStringList &names);
@@ -147,10 +153,25 @@ QString dataToText(const QByteArray &bytes, const QString &mime);
 
 bool clipboardContains(QClipboard::Mode mode, const QVariantMap &data);
 
+bool isClipboardData(const QVariantMap &data);
+
 int smallIconSize();
 
 QPoint toScreen(const QPoint &pos, int w = 0, int h = 0);
 
+/// Returns true only if UI name contains key hint (unescaped '&').
+bool hasKeyHint(const QString &name);
+
+/// Removes key hint (first unescaped '&') from UI name.
+QString removeKeyHint(QString &name);
+
 void moveWindowOnScreen(QWidget *w, const QPoint &pos);
+
+void moveToCurrentWorkspace(QWidget *w);
+
+/**
+ * Handle key for Vi mode.
+ */
+bool handleViKey(QKeyEvent *event, QObject *eventReceiver);
 
 #endif // COMMON_H

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,6 +19,8 @@
 
 #include "action.h"
 
+#include "common/common.h"
+#include "common/log.h"
 #include "common/mimetypes.h"
 #include "item/serialize.h"
 
@@ -315,11 +317,28 @@ void Action::setData(const QVariantMap &data)
     m_data = data;
 }
 
+const QVariantMap &Action::data() const
+{
+    return m_data;
+}
+
 QVariantMap Action::data(quintptr id)
 {
     const QMutexLocker lock(&actionsLock);
     const int i = actions.indexOf(reinterpret_cast<Action*>(id));
-    return i != -1 ? actions[i]->m_data : QVariantMap();
+    const Action *action = actions.value(i);
+    return action ? action->m_data : QVariantMap();
+}
+
+void Action::setData(quintptr id, const QVariantMap &data)
+{
+    const QMutexLocker lock(&actionsLock);
+    const int i = actions.indexOf(reinterpret_cast<Action*>(id));
+    Action *action = actions.value(i);
+    if (action && action->m_data != data) {
+        action->m_data = data;
+        emit action->dataChanged(data);
+    }
 }
 
 void Action::actionError(QProcess::ProcessError)
@@ -377,7 +396,7 @@ void Action::actionOutput()
     const QByteArray output = p->readAll();
 
     if (hasTextOutput()) {
-        m_lastOutput.append( QString::fromUtf8(output) );
+        m_lastOutput.append( getTextData(output) );
         if ( !m_lastOutput.isEmpty() && !m_sep.isEmpty() ) {
             // Split to items.
             QStringList items;
@@ -399,7 +418,7 @@ void Action::actionErrorOutput()
     QProcess *p = qobject_cast<QProcess*>(sender());
     Q_ASSERT(p);
 
-    m_errstr.append( QString::fromUtf8(p->readAllStandardError()) );
+    m_errstr.append( getTextData(p->readAllStandardError()) );
 }
 
 void Action::writeInput()

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,8 +22,6 @@
 
 #include "app.h"
 #include "client.h"
-
-#include <QFile>
 
 class InputReader : public QObject
 {
@@ -62,10 +60,9 @@ private slots:
     void sendInput();
 
 private:
-    void startInputReader(bool sendInputAfterFinished);
+    void startInputReader();
     void abortInputReader();
     bool isInputReaderFinished() const;
-    QByteArray fetchInput();
 
     QThread *m_inputReaderThread;
     QByteArray m_input;

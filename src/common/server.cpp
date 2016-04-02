@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -101,18 +101,10 @@ Server::Server(const QString &name, QObject *parent)
     , m_server(new QLocalServer(this))
     , m_socketCount(0)
 {
-    if (createSystemMutex(name, this)) {
-        COPYQ_LOG( QString("Starting server \"%1\".").arg(name) );
-
-        if ( !serverIsRunning(name) ) {
-            QLocalServer::removeServer(name);
-            m_server->listen(name);
-        }
+    if ( createSystemMutex(name, this) && !serverIsRunning(name) ) {
+        QLocalServer::removeServer(name);
+        m_server->listen(name);
     }
-
-    COPYQ_LOG( QString(isListening()
-                       ? "Server \"%1\" started."
-                       : "Server \"%1\" already running!").arg(name) );
 
     qRegisterMetaType<Arguments>("Arguments");
     connect( qApp, SIGNAL(aboutToQuit()), SLOT(close()) );

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -277,6 +277,11 @@ void TabWidget::updateTabs()
     } else {
         m_tabBar->updateTabIcons();
     }
+}
+
+QAbstractScrollArea *TabWidget::tabTree()
+{
+    return m_tabTree;
 }
 
 void TabWidget::setCurrentIndex(int tabIndex)

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -49,7 +49,7 @@ namespace {
 bool testStderr(const QByteArray &stderrData, TestInterface::ReadStderrFlag flag = TestInterface::ReadErrors)
 {
     const QRegExp scriptExceptionError("Script \\d\\+: Error:");
-    static const QRegExp re(scriptExceptionError.pattern() + "|(?!\\bX )warning:|(?!\\bX )error:|ASSERT", Qt::CaseInsensitive);
+    static const QRegExp re(scriptExceptionError.pattern() + "|^CopyQ Warning|^CopyQ ERROR|ASSERT", Qt::CaseInsensitive);
     int from = 0;
     bool skipScriptException = flag == TestInterface::ReadErrorsWithoutScriptException;
     const QString output = QString::fromUtf8(stderrData);
@@ -149,8 +149,9 @@ public:
             return "Server is already running.";
 
         if ( isAnyServerRunning() ) {
-            return "Other test server is running."
-                   "Please close the other test session before running new one.";
+            qWarning() << "closing existing test session";
+            run(Args("exit"));
+            waitForAnyServerToQuit();
         }
 
         m_server.reset(new QProcess);
@@ -177,6 +178,17 @@ public:
         return QByteArray();
     }
 
+    QByteArray waitForAnyServerToQuit()
+    {
+        SleepTimer t(8000);
+        while ( isAnyServerRunning() && t.sleep() ) {}
+
+        if ( isAnyServerRunning() )
+            return "Unable to stop server!" + readServerErrors(ReadAllStderr);
+
+        return QByteArray();
+    }
+
     QByteArray stopServer()
     {
         QByteArray errors;
@@ -189,10 +201,7 @@ public:
         if ( !m_server.isNull() && !closeProcess(m_server.data()) )
             return "Failed to close server properly!" + readServerErrors(ReadAllStderr);
 
-        if ( isServerRunning() || isAnyServerRunning() )
-            return "Unable to stop server!" + readServerErrors(ReadAllStderr);
-
-        return readServerErrors();
+        return waitForAnyServerToQuit();
     }
 
     bool isServerRunning()
@@ -526,7 +535,6 @@ Tests::Tests(const TestInterfacePtr &test, QObject *parent)
 
 void Tests::initTestCase()
 {
-    TEST(m_test->init());
 }
 
 void Tests::cleanupTestCase()
@@ -556,11 +564,11 @@ void Tests::showHide()
     waitFor(waitMsShow);
     WAIT_ON_OUTPUT("visible", "true\n");
 
-    RUN("toggle", "");
+    RUN("toggle", "false\n");
     waitFor(waitMsShow);
     WAIT_ON_OUTPUT("visible", "false\n");
 
-    RUN("toggle", "");
+    RUN("toggle", "true\n");
     waitFor(waitMsShow);
     WAIT_ON_OUTPUT("visible", "true\n");
 
@@ -1635,6 +1643,20 @@ void Tests::executeCommand()
         , "");
 }
 
+void Tests::settingsCommand()
+{
+    RUN("config" << "clipboard_tab" << "TEST", "");
+    RUN("config" << "clipboard_tab", "TEST\n");
+
+    RUN("settings" << "test_variable", "");
+    RUN("settings" << "test_variable" << "TEST VALUE", "");
+    RUN("settings" << "test_variable", "TEST VALUE\n");
+    RUN("settings" << "test_variable" << "TEST VALUE 2", "");
+    RUN("settings" << "test_variable", "TEST VALUE 2\n");
+
+    RUN("config" << "clipboard_tab", "TEST\n");
+}
+
 void Tests::fileClass()
 {
     RUN("eval" <<
@@ -1655,6 +1677,18 @@ void Tests::dirClass()
     RUN("eval" << "Dir().homePath()" , QDir::homePath() + "\n");
 }
 
+void Tests::setEnvCommand()
+{
+    RUN("eval" <<
+        "\n var name = 'COPYQ_ENV_TEST'"
+        "\n if (setEnv(name, 'OK'))"
+        "\n   print(env(name))"
+        "\n else"
+        "\n   print('FAILED')"
+        , "OK"
+        );
+}
+
 int Tests::run(const QStringList &arguments, QByteArray *stdoutData, QByteArray *stderrData, const QByteArray &in)
 {
     return m_test->run(arguments, stdoutData, stderrData, in);
@@ -1670,6 +1704,7 @@ bool Tests::hasTab(const QString &tabName)
 int runTests(int argc, char *argv[])
 {
     QRegExp onlyPlugins;
+    bool runPluginTests = true;
 
     if (argc > 1) {
         QString arg = argv[1];
@@ -1679,6 +1714,10 @@ int runTests(int argc, char *argv[])
             onlyPlugins.setCaseSensitivity(Qt::CaseInsensitive);
             --argc;
             ++argv;
+        } else {
+            // Omit plugin tests if specific core tests requested.
+            const QString lastArg(argv[argc - 1]);
+            runPluginTests = lastArg.startsWith("-");
         }
     }
 
@@ -1692,15 +1731,17 @@ int runTests(int argc, char *argv[])
         exitCode = QTest::qExec(&tc, argc, argv);
     }
 
-    ItemFactory itemFactory;
-    foreach( const ItemLoaderInterfacePtr &loader, itemFactory.loaders() ) {
-        if ( loader->id().contains(onlyPlugins) ) {
-            QScopedPointer<QObject> pluginTests( loader->tests(test) );
-            if ( !pluginTests.isNull() ) {
-                test->setupTest(loader->id(), pluginTests->property("CopyQ_test_settings"));
-                const int pluginTestsExitCode = QTest::qExec(pluginTests.data(), argc, argv);
-                exitCode = qMax(exitCode, pluginTestsExitCode);
-                test->stopServer();
+    if (runPluginTests) {
+        ItemFactory itemFactory;
+        foreach( const ItemLoaderInterface *loader, itemFactory.loaders() ) {
+            if ( loader->id().contains(onlyPlugins) ) {
+                QScopedPointer<QObject> pluginTests( loader->tests(test) );
+                if ( !pluginTests.isNull() ) {
+                    test->setupTest(loader->id(), pluginTests->property("CopyQ_test_settings"));
+                    const int pluginTestsExitCode = QTest::qExec(pluginTests.data(), argc, argv);
+                    exitCode = qMax(exitCode, pluginTestsExitCode);
+                    test->stopServer();
+                }
             }
         }
     }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -29,6 +29,7 @@
 #include <QDesktopWidget>
 #include <QDir>
 #include <QImage>
+#include <QKeyEvent>
 #include <QLocale>
 #include <QMimeData>
 #include <QObject>
@@ -123,6 +124,31 @@ QTextCodec *codecForText(const QByteArray &bytes)
     return QTextCodec::codecForName("utf-8");
 }
 
+int indexOfKeyHint(const QString &name)
+{
+    bool amp = false;
+    int i = 0;
+
+    foreach (const QChar &c, name) {
+        if (c == '&')
+            amp = !amp;
+        else if (amp)
+            return i - 1;
+        ++i;
+    }
+
+    return -1;
+}
+
+
+QString escapeHtmlSpaces(const QString &str)
+{
+    QString str2 = str;
+    return str2
+            .replace(' ', "&nbsp;")
+            .replace('\n', "<br />");
+}
+
 } // namespace
 
 QString quoteString(const QString &str)
@@ -137,15 +163,15 @@ QString quoteString(const QString &str)
 QString escapeHtml(const QString &str)
 {
 #if QT_VERSION < 0x050000
-    return Qt::escape(str).replace('\n', "<br />");
+    return escapeHtmlSpaces(Qt::escape(str));
 #else
-    return str.toHtmlEscaped().replace('\n', "<br />");
+    return escapeHtmlSpaces(str.toHtmlEscaped());
 #endif
 }
 
 bool isMainThread()
 {
-    return QThread::currentThread() == QApplication::instance()->thread();
+    return QThread::currentThread() == qApp->thread();
 }
 
 const QMimeData *clipboardData(QClipboard::Mode mode)
@@ -194,9 +220,15 @@ QByteArray getUtf8Data(const QMimeData &data, const QString &format)
     return data.data(format);
 }
 
+QString getTextData(const QByteArray &bytes)
+{
+    // QString::fromUtf8(bytes) ends string at first '\0'.
+    return QString::fromUtf8( bytes.constData(), bytes.size() );
+}
+
 QString getTextData(const QVariantMap &data, const QString &mime)
 {
-    return data.contains(mime) ? QString::fromUtf8( data[mime].toByteArray() ) : QString();
+    return getTextData( data.value(mime).toByteArray() );
 }
 
 QString getTextData(const QVariantMap &data)
@@ -283,7 +315,7 @@ QMimeData* createMimeData(const QVariantMap &data)
 
 #ifdef HAS_TESTS
     // Don't set clipboard owner if monitor is only used to set clipboard for tests.
-    if ( !QCoreApplication::instance()->property("CopyQ_testing").toBool() )
+    if ( !qApp->property("CopyQ_testing").toBool() )
 #endif
         newClipboardData->setData( mimeOwner, qgetenv("COPYQ_SESSION_NAME") );
 
@@ -326,39 +358,53 @@ QString elideText(const QString &text, const QFont &font, const QString &format,
     if (maxWidthPixels <= 0)
         maxWidthPixels = smallIconSize() * 20;
 
-    const int oldLines = text.count('\n');
+    QStringList lines = text.split('\n');
 
-    QString newText = text;
-    newText.remove(QRegExp("^\\s+"));
+    // Ignore empty lines at beginning.
+    const QRegExp reNonEmpty(".*\\S.*");
+    const int firstLine = qMax(0, lines.indexOf(reNonEmpty));
+    const int lastLine = qMax(0, lines.lastIndexOf(reNonEmpty, firstLine + maxLines - 1));
 
-    const int newLines = newText.count('\n');
+    // If empty lines are at beginning, prepend triple dot.
+    if (firstLine != 0)
+        lines[firstLine].prepend("...");
 
-    int lines = 0;
-    QString result;
-    foreach ( QString line, newText.split('\n') ) {
-        if (++lines > maxLines) {
-            result.append( QString("...") );
-            break;
-        }
+    // If there are too many lines, append triple dot.
+    if (lastLine + 1 != lines.size())
+        lines[lastLine].append("...");
 
-        // Show triple-dot in middle if text is too long.
-        QFontMetrics fm(font);
-        const int formatWidth = format.isEmpty() ? 0 : fm.width(format.arg(QString()));
-        line = fm.elidedText(line.simplified(), Qt::ElideMiddle, maxWidthPixels - formatWidth);
+    lines = lines.mid(firstLine, lastLine - firstLine + 1);
 
-        if ( !line.isEmpty() ) {
-            if ( !result.isEmpty() )
-                result.append('\n');
-            result.append(line);
+    QFontMetrics fm(font);
+    const int formatWidth = format.isEmpty() ? 0 : fm.width(format.arg(QString()));
+
+    // Remove redundant spaces from single line text.
+    if (lines.size() == 1)
+        lines[0] = lines[0].simplified();
+
+    // Find common indentation.
+    int commonIndent = lines.value(0).size();
+    const QRegExp reNonSpace("\\S");
+    for (int i = 0; i < lines.size(); ++i) {
+        const int lineIndent = lines[i].indexOf(reNonSpace);
+        if (lineIndent != -1 && lineIndent < commonIndent) {
+            commonIndent = lineIndent;
+            if (commonIndent == 0)
+                break;
         }
     }
+
+    // Remove common indentation each line and elide text if too long.
+    for (int i = 0; i < lines.size(); ++i) {
+        QString &line = lines[i];
+        line = fm.elidedText(line.mid(commonIndent), Qt::ElideMiddle, maxWidthPixels - formatWidth);
+    }
+
+    QString result = lines.join("\n");
 
     // Escape all ampersands.
     if (escapeAmpersands)
         result.replace( QChar('&'), QString("&&") );
-
-    if (newLines < oldLines && result != "...")
-        result.prepend("...");
 
     return format.isEmpty() ? result : format.arg(result);
 }
@@ -368,11 +414,9 @@ QString textLabelForData(const QVariantMap &data, const QFont &font, const QStri
 {
     QString label;
 
-    QStringList formats;
-    foreach ( const QString &format, data.keys() ) {
-        if ( !format.startsWith(COPYQ_MIME_PREFIX) )
-            formats.append(format);
-    }
+    const QStringList formats = data.keys();
+
+    const QString notes = data.value(mimeItemNotes).toString();
 
     if ( data.contains(mimeHidden) ) {
         label = QObject::tr("<HIDDEN>", "Label for hidden/secret clipboard content");
@@ -385,12 +429,11 @@ QString textLabelForData(const QVariantMap &data, const QFont &font, const QStri
         else
             label = QString("%1");
 
-        label = label.arg( quoteString("%1") );
-
         if (!format.isEmpty())
             label = format.arg(label);
 
-        return elideText(text, font, label, escapeAmpersands, maxWidthPixels, maxLines);
+        const QString textWithNotes = notes.isEmpty() ? text : notes + ": " + text;
+        return elideText(textWithNotes, font, label, escapeAmpersands, maxWidthPixels, maxLines);
     } else if ( formats.indexOf(QRegExp("^image/.*")) != -1 ) {
         label = QObject::tr("<IMAGE>", "Label for image in clipboard");
     } else if ( formats.indexOf(mimeUriList) != -1 ) {
@@ -399,6 +442,11 @@ QString textLabelForData(const QVariantMap &data, const QFont &font, const QStri
         label = QObject::tr("<EMPTY>", "Label for empty clipboard");
     } else {
         label = QObject::tr("<DATA>", "Label for data in clipboard");
+    }
+
+    if (!notes.isEmpty()) {
+        label = elideText(notes, font, QString(), escapeAmpersands, maxWidthPixels, maxLines)
+                + ": " + label;
     }
 
     if (!format.isEmpty())
@@ -416,10 +464,17 @@ QString shortcutToRemove()
 #endif
 }
 
+QString portableShortcutText(const QKeySequence &shortcut)
+{
+    // WORKAROUND: Qt has convert some keys to upper case which
+    //             breaks some shortcuts on some keyboard layouts.
+    return shortcut.toString(QKeySequence::PortableText).toLower();
+}
+
 QString toPortableShortcutText(const QString &shortcutNativeText)
 {
-    return QKeySequence(shortcutNativeText, QKeySequence::NativeText)
-            .toString(QKeySequence::PortableText);
+    return portableShortcutText(
+                QKeySequence(shortcutNativeText, QKeySequence::NativeText));
 }
 
 void renameToUnique(QString *name, const QStringList &names)
@@ -507,6 +562,11 @@ bool clipboardContains(QClipboard::Mode mode, const QVariantMap &data)
     return true;
 }
 
+bool isClipboardData(const QVariantMap &data)
+{
+    return data.value(mimeClipboardMode).toByteArray().isEmpty();
+}
+
 int smallIconSize()
 {
     return QApplication::style()->pixelMetric(QStyle::PM_SmallIconSize);
@@ -521,10 +581,81 @@ QPoint toScreen(const QPoint &pos, int w, int h)
                 );
 }
 
+bool hasKeyHint(const QString &name)
+{
+    return indexOfKeyHint(name) != -1;
+}
+
+QString removeKeyHint(QString &name)
+{
+    const int i = indexOfKeyHint(name);
+    return i == -1 ? name : name.remove(i, 1);
+}
+
 void moveWindowOnScreen(QWidget *w, const QPoint &pos)
 {
     const QRect availableGeometry = QApplication::desktop()->availableGeometry(pos);
     const int x = qMax(0, qMin(pos.x(), availableGeometry.right() - w->width()));
     const int y = qMax(0, qMin(pos.y(), availableGeometry.bottom() - w->height()));
     w->move(x, y);
+    moveToCurrentWorkspace(w);
+}
+
+void moveToCurrentWorkspace(QWidget *w)
+{
+#ifdef COPYQ_WS_X11
+    /* Re-initialize window in window manager so it can popup on current workspace. */
+    if (w->isVisible()) {
+        w->hide();
+        w->show();
+    }
+#else
+    Q_UNUSED(w);
+#endif
+}
+
+bool handleViKey(QKeyEvent *event, QObject *eventReceiver)
+{
+    int key = event->key();
+    Qt::KeyboardModifiers mods = event->modifiers();
+
+    switch ( key ) {
+    case Qt::Key_G:
+        key = mods & Qt::ShiftModifier ? Qt::Key_End : Qt::Key_Home;
+        mods = mods & ~Qt::ShiftModifier;
+        break;
+    case Qt::Key_J:
+        key = Qt::Key_Down;
+        break;
+    case Qt::Key_K:
+        key = Qt::Key_Up;
+        break;
+    case Qt::Key_F:
+    case Qt::Key_D:
+    case Qt::Key_B:
+    case Qt::Key_U:
+        if (mods & Qt::ControlModifier) {
+            key = (key == Qt::Key_F || key == Qt::Key_D) ? Qt::Key_PageDown : Qt::Key_PageUp;
+            mods = mods & ~Qt::ControlModifier;
+        } else {
+            return false;
+        }
+        break;
+    case Qt::Key_BracketLeft:
+        if (mods & Qt::ControlModifier) {
+            key = Qt::Key_Escape;
+            mods = mods & ~Qt::ControlModifier;
+        } else {
+            return false;
+        }
+        break;
+    default:
+        return false;
+    }
+
+    QKeyEvent event2(QEvent::KeyPress, key, mods, event->text());
+    QCoreApplication::sendEvent(eventReceiver, &event2);
+    event->accept();
+
+    return true;
 }

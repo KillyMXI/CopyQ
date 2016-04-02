@@ -4,7 +4,9 @@ CopyQ Scripting
 CopyQ provides scripting capabilities to automatically handle clipboard changes,
 organize items, change settings and much more.
 
-In addition to features provided by Qt Script there are following [functions](#functions), [types](#types) and [useful MIME types](#mime-types).
+In addition to features provided by Qt Script there are following
+[functions](#functions), [types](#types), [objects](#objects) and
+[useful MIME types](#mime-types).
 
 Functions
 ---------
@@ -47,9 +49,11 @@ Shows tab with given geometry.
 
 Hides main window.
 
-###### toggle()
+###### bool toggle()
 
 Shows or hides main window.
+
+Returns true only if main window is being shown.
 
 ###### menu()
 
@@ -156,9 +160,9 @@ Returns path to icon for tab.
 
 Sets icon for tab.
 
-###### length(), size(), count()
+###### count(), length(), size()
 
-Returns number of items in current tab.
+Returns amount of items in current tab.
 
 ###### select(row)
 
@@ -268,6 +272,26 @@ Returns standard input passed to the script.
 
 Returns data for command (item data, clipboard data or text from action dialog).
 
+###### ByteArray setData(mimeType, data)
+
+Modifies data passed to automatic commands or selected items if run from menu or using shortcut.
+
+Next automatic command will get updated data.
+
+This is also the data used to create new item from clipboard.
+
+E.g. following automatic command will add creation time data and tag to new items.
+
+    copyq:
+    var timeFormat = 'yyyy-MM-dd hh:mm:ss'
+    setData('application/x-copyq-user-copy-time', dateString(timeFormat))
+    setData('application/x-copyq-tags', 'copied: ' + time)
+
+E.g. following menu command will add tag to selected items.
+
+    copyq:
+    setData('application/x-copyq-tags', 'Important')
+
 ###### print(value)
 
 Prints value to standard output.
@@ -279,6 +303,10 @@ Aborts script evaluation.
 ###### fail()
 
 Aborts script evaluation with nonzero exit code.
+
+###### setCurrentTab(tabName)
+
+Set tab as current (focus tab without showing main window).
 
 ###### selectItems(row, ...)
 
@@ -418,6 +446,16 @@ Sends HTTP POST request.
 
 Returns reply.
 
+###### ByteArray env(name)
+
+Returns value of environment variable with given name.
+
+###### bool setEnv(name, value)
+
+Sets environment variable with given name to given value.
+
+Returns true only if the variable was set.
+
 Types
 -----
 
@@ -451,6 +489,14 @@ var bytes = f.readAll()
 
 Wrapper around [QDir](http://doc.qt.io/qt-5/qdir.html).
 
+Objects
+-------
+
+###### arguments (Array)
+
+Array for accessing arguments passed to current function or the script
+(`arguments[0]` is the script itself).
+
 ###### Item (Object)
 
 Type is `Object` and each property is MIME type with data.
@@ -481,7 +527,7 @@ Type is `Object` and properties are:
 - `error` - error string (set only if an error occurred)
 - `redirect` - URL for redirection (set only if redirection is needed)
 - `headers` - reply headers (array of pairs with header name and header content)
- 
+
 MIME Types
 ----------
 
@@ -548,3 +594,12 @@ If set to `1`, the clipboard content will be hidden in GUI.
 E.g. if you run following, window title and tool tip will be cleared.
 
     copyq copy application/x-copyq-hidden 1 plain/text "This is secret"
+
+###### application/x-copyq-shortcut
+
+Application or global shortcut which activated the command.
+
+    copyq:
+    var shortcut = data("application/x-copyq-shortcut")
+    popup("Shortcut Pressed", shortcut)
+

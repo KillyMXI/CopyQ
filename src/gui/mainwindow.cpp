@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,8 +21,10 @@
 #include "ui_mainwindow.h"
 
 #include "common/action.h"
+#include "common/appconfig.h"
 #include "common/common.h"
 #include "common/command.h"
+#include "common/config.h"
 #include "common/contenttype.h"
 #include "common/log.h"
 #include "common/mimetypes.h"
@@ -33,18 +35,21 @@
 #include "gui/clipboarddialog.h"
 #include "gui/commandaction.h"
 #include "gui/commanddialog.h"
-#include "gui/configtabappearance.h"
-#include "gui/configtabshortcuts.h"
 #include "gui/configurationmanager.h"
+#include "gui/iconfactory.h"
 #include "gui/iconfactory.h"
 #include "gui/iconselectdialog.h"
 #include "gui/icons.h"
+#include "gui/logdialog.h"
 #include "gui/notification.h"
 #include "gui/notificationdaemon.h"
 #include "gui/tabdialog.h"
+#include "gui/tabicons.h"
 #include "gui/tabwidget.h"
+#include "gui/theme.h"
 #include "gui/traymenu.h"
-#include "item/clipboardmodel.h"
+#include "gui/windowgeometryguard.h"
+#include "item/itemfactory.h"
 #include "item/serialize.h"
 #include "platform/platformnativeinterface.h"
 #include "platform/platformwindow.h"
@@ -54,7 +59,6 @@
 #endif
 
 #include <QAction>
-#include <QBitmap>
 #include <QCloseEvent>
 #include <QFile>
 #include <QFileDialog>
@@ -67,7 +71,6 @@
 #include <QPushButton>
 #include <QTimer>
 #include <QToolBar>
-#include <QPainter>
 
 namespace {
 
@@ -78,11 +81,6 @@ const QIcon iconTabRemove() { return getIconFromResources("tab_remove"); }
 const QIcon iconTabRename() { return getIconFromResources("tab_rename"); }
 
 const int clipboardNotificationId = 0;
-
-QIcon appIcon(AppIconFlags flags = AppIconNormal)
-{
-    return ConfigurationManager::instance()->iconFactory()->appIcon(flags);
-}
 
 bool canPaste()
 {
@@ -232,35 +230,123 @@ void setAlwaysOnTop(QWidget *window, bool alwaysOnTop)
     }
 }
 
-bool isClipboardData(const QVariantMap &data)
-{
-    return data.value(mimeClipboardMode).toByteArray().isEmpty();
-}
-
 bool isClipboardDataHidden(const QVariantMap &data)
 {
     return data.value(mimeHidden).toByteArray() == "1";
 }
 
+#ifdef COPYQ_WS_X11
+bool needSyncClipboardToSelection(const QVariantMap &data)
+{
+    return isClipboardData(data)
+            && AppConfig().option<Config::copy_clipboard>()
+            && !clipboardContains(QClipboard::Selection, data);
+}
+
+bool needSyncSelectionToClipboard(const QVariantMap &data)
+{
+    return !isClipboardData(data)
+            && AppConfig().option<Config::copy_selection>()
+            && !clipboardContains(QClipboard::Clipboard, data);
+}
+
+bool needStore(const QVariantMap &data)
+{
+    return isClipboardData(data)
+            ? AppConfig().option<Config::check_clipboard>()
+            : AppConfig().option<Config::check_selection>();
+}
+#else
+bool needSyncClipboardToSelection(const QVariantMap &)
+{
+    return false;
+}
+
+bool needSyncSelectionToClipboard(const QVariantMap &)
+{
+    return false;
+}
+
+bool needStore(const QVariantMap &data)
+{
+    return isClipboardData(data)
+            && AppConfig().option<Config::check_clipboard>();
+}
+#endif
+
+template <typename Dialog>
+Dialog *openDialog(QWidget *dialogParent)
+{
+    QScopedPointer<Dialog> dialog( new Dialog(dialogParent) );
+    WindowGeometryGuard::create( dialog.data() );
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+    dialog->setWindowIcon(appIcon());
+    dialog->activateWindow();
+    dialog->show();
+    return dialog.take();
+}
+
+QString defaultTabName()
+{
+    const QString tab = AppConfig().option<Config::clipboard_tab>();
+    return tab.isEmpty() ? defaultClipboardTabName() : tab;
+}
+
+void loadItemFactorySettings(ItemFactory *itemFactory)
+{
+    QSettings settings;
+
+    // load settings for each plugin
+    settings.beginGroup("Plugins");
+    foreach ( ItemLoaderInterface *loader, itemFactory->loaders() ) {
+        settings.beginGroup(loader->id());
+
+        QVariantMap s;
+        foreach (const QString &name, settings.allKeys()) {
+            s[name] = settings.value(name);
+        }
+        loader->loadSettings(s);
+        itemFactory->setLoaderEnabled( loader, settings.value("enabled", true).toBool() );
+
+        settings.endGroup();
+    }
+    settings.endGroup();
+
+    // load plugin priority
+    const QStringList pluginPriority =
+            settings.value("plugin_priority", QStringList()).toStringList();
+    itemFactory->setPluginPriority(pluginPriority);
+}
+
+bool isItemActivationShortcut(const QKeySequence &shortcut)
+{
+    return (shortcut[0] == Qt::Key_Return || shortcut[0] == Qt::Key_Enter)
+            && shortcut[1] == 0
+            && shortcut[2] == 0
+            && shortcut[3] == 0;
+}
+
 } // namespace
 
-MainWindow::MainWindow(QWidget *parent)
+MainWindow::MainWindow(ItemFactory *itemFactory, QWidget *parent)
     : QMainWindow(parent)
-    , cm(ConfigurationManager::createInstance(this))
+    , cm(NULL)
     , ui(new Ui::MainWindow)
     , m_menuItem(NULL)
     , m_trayMenu( new TrayMenu(this) )
     , m_tray(NULL)
     , m_clipboardStoringDisabled(false)
     , m_actionToggleClipboardStoring()
-    , m_sharedData(new ClipboardBrowserShared)
+    , m_sharedData(new ClipboardBrowserShared(itemFactory))
     , m_lastWindow()
     , m_notifications(NULL)
-    , m_minimizeUnsupported(false)
     , m_actionHandler(new ActionHandler(this))
     , m_trayTab(NULL)
     , m_commandDialog(NULL)
     , m_canUpdateTitleFromScript(true)
+    , m_iconSnip(false)
+    , m_wasMaximized(false)
+    , m_menuItems(menuItems())
 {
     ui->setupUi(this);
     menuBar()->setObjectName("menu_bar");
@@ -269,8 +355,8 @@ MainWindow::MainWindow(QWidget *parent)
     ui->tabWidget->addToolBars(this);
     addToolBar(Qt::RightToolBarArea, ui->toolBar);
 
-    cm->registerWindowGeometry(this);
-    restoreState( cm->mainWindowState(objectName()) );
+    WindowGeometryGuard::create(this);
+    restoreState( mainWindowState(objectName()) );
 
     updateIcon();
 
@@ -295,10 +381,12 @@ MainWindow::MainWindow(QWidget *parent)
              this, SLOT(tabCloseRequested(int)) );
     connect( ui->searchBar, SIGNAL(filterChanged(QRegExp)),
              this, SLOT(onFilterChanged(QRegExp)) );
-    connect( m_actionHandler, SIGNAL(hasRunningActionChanged()),
-             this, SLOT(updateIcon()) );
+    connect( m_actionHandler, SIGNAL(runningActionsCountChanged()),
+             this, SLOT(updateIconSnip()) );
     connect( qApp, SIGNAL(aboutToQuit()),
              this, SLOT(onAboutToQuit()) );
+    connect( this, SIGNAL(configurationChanged()),
+             this, SLOT(loadSettings()) );
 
     connect(&m_itemMenuCommandTester, SIGNAL(commandPassed(Command,bool)),
             SLOT(addCommandsToItemMenu(Command,bool)));
@@ -306,6 +394,9 @@ MainWindow::MainWindow(QWidget *parent)
             SLOT(addCommandsToTrayMenu(Command,bool)));
     connect(&m_automaticCommandTester, SIGNAL(commandPassed(Command,bool)),
             SLOT(automaticCommandTestFinished(Command,bool)));
+
+    connect(itemFactory, SIGNAL(error(QString)),
+            this, SLOT(showError(QString)));
 
     m_commands = loadCommands();
     loadSettings();
@@ -316,15 +407,7 @@ MainWindow::MainWindow(QWidget *parent)
     initSingleShotTimer( &m_timerUpdateContextMenu, 0, this, SLOT(updateContextMenuTimeout()) );
     initSingleShotTimer( &m_timerShowWindow, 250 );
     initSingleShotTimer( &m_timerTrayAvailable, 1000, this, SLOT(createTrayIfSupported()) );
-    initSingleShotTimer( &m_timerTrayIconSnip, 250, this, SLOT(updateIconTimeout()) );
-
-    // notify window if configuration changes
-    connect( cm, SIGNAL(configurationChanged()),
-             this, SLOT(loadSettings()) );
-    connect( cm, SIGNAL(error(QString)),
-             this, SLOT(showError(QString)) );
-    connect( cm->tabShortcuts(), SIGNAL(openCommandDialogRequest()),
-             this, SLOT(openCommands()) );
+    initSingleShotTimer( &m_timerTrayIconSnip, 250, this, SLOT(updateIconSnipTimeout()) );
 
     // browse mode by default
     enterBrowseMode();
@@ -364,9 +447,11 @@ void MainWindow::exit()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    COPYQ_LOG("Got main window close event.");
+
     if ( closeMinimizes() ) {
         event->ignore();
-        showMinimized();
+        minimizeWindow();
     } else {
         QMainWindow::closeEvent(event);
     }
@@ -376,6 +461,11 @@ void MainWindow::showEvent(QShowEvent *event)
 {
     m_timerShowWindow.start();
     QMainWindow::showEvent(event);
+}
+
+void MainWindow::hideEvent(QHideEvent *event)
+{
+    QMainWindow::hideEvent(event);
 }
 
 void MainWindow::createMenu()
@@ -485,6 +575,7 @@ void MainWindow::createMenu()
 
     // Help
     menu = menubar->addMenu(tr("&Help"));
+    createAction( Actions::Help_ShowLog, SLOT(openLogDialog()), menu );
     createAction( Actions::Help_Help, SLOT(openAboutDialog()), menu );
 }
 
@@ -528,26 +619,19 @@ void MainWindow::popupTabBarMenu(const QPoint &pos, const QString &tab)
 
 void MainWindow::updateIcon()
 {
-    AppIconFlags flags = m_clipboardStoringDisabled ? AppIconDisabled : AppIconNormal;
-
-    // Show running icon for some minimal time (nice snip effect with default icon).
-    if ( hasRunningAction() || m_timerTrayIconSnip.isActive() ) {
-        flags |= AppIconRunning;
-
-        if ( !m_timerTrayIconSnip.isActive() )
-            m_timerTrayIconSnip.start(250);
-    }
-
-    const QIcon icon = appIcon(flags);
-
+    const QIcon icon = appIcon(m_iconSnip ? AppIconRunning : AppIconNormal);
     setWindowIcon(icon);
     updateTrayIcon();
 }
 
-void MainWindow::updateIconTimeout()
+void MainWindow::updateIconSnipTimeout()
 {
-    if ( !hasRunningAction() )
+    const bool shouldSnip = hasRunningAction() || m_clipboardStoringDisabled;
+    if (m_iconSnip != shouldSnip) {
+        m_iconSnip = shouldSnip;
+        m_timerTrayIconSnip.start(250);
         updateIcon();
+    }
 }
 
 void MainWindow::updateContextMenuTimeout()
@@ -557,7 +641,7 @@ void MainWindow::updateContextMenuTimeout()
     if (c->editing())
         return;
 
-    cm->tabShortcuts()->setDisabledShortcuts(QList<QKeySequence>());
+    setDisabledShortcuts(QList<QKeySequence>());
 
     addCommandsToMenu(m_menuItem, c->getSelectedItemData());
 
@@ -583,11 +667,21 @@ void MainWindow::updateContextMenuTimeout()
     updateToolBar();
 }
 
+void MainWindow::updateIconSnip()
+{
+    if ( !m_timerTrayIconSnip.isActive() ) {
+        m_iconSnip = !m_iconSnip;
+        m_timerTrayIconSnip.start(250);
+        updateIcon();
+    }
+}
+
 void MainWindow::onAboutToQuit()
 {
-    cm->disconnect();
-    cm->saveMainWindowState( objectName(), saveState() );
-    ui->tabWidget->saveTabInfo();
+    if (cm)
+        cm->disconnect();
+
+    saveMainWindowState( objectName(), saveState() );
     hideWindow();
     if (m_tray)
         m_tray->hide();
@@ -655,7 +749,7 @@ void MainWindow::onCommandActionTriggered(const Command &command, const QVariant
 
 void MainWindow::on_tabWidget_dropItems(const QString &tabName, QDropEvent *event)
 {
-    ClipboardBrowser *browser = createTab(tabName);
+    ClipboardBrowser *browser = tab(tabName);
 
     if ( browser->isLoaded() ) {
         const QMimeData &data = *event->mimeData();
@@ -694,29 +788,10 @@ void MainWindow::action()
 
 void MainWindow::automaticCommandTestFinished(const Command &command, bool passed)
 {
-    if (!passed)
-        return;
-
-    m_automaticCommands.append(command);
-
-    if (!m_currentAutomaticCommand)
-        runNextAutomaticCommand();
-}
-
-void MainWindow::automaticCommandFinished()
-{
-    Q_ASSERT(!m_currentAutomaticCommand);
-
-    if (!m_automaticCommands.isEmpty()) {
-        const Command command = m_automaticCommands.takeFirst();
-        if (command.remove || command.transform) {
-            abortAutomaticCommands();
-            COPYQ_LOG("Clipboard ignored by \"" + command.name + "\"");
-        }
-    }
-
-    if (!m_automaticCommands.isEmpty())
-        runNextAutomaticCommand();
+    if (passed)
+        runAutomaticCommand(command);
+    else
+        m_automaticCommandTester.start();
 }
 
 void MainWindow::enableActionForCommand(QMenu *menu, const Command &command, bool enable)
@@ -735,11 +810,9 @@ void MainWindow::enableActionForCommand(QMenu *menu, const Command &command, boo
         act->setEnabled(true);
 
         if (menu == m_menuItem) {
-            QList<QKeySequence> shortcuts = act->shortcuts();
-            if (!shortcuts.isEmpty()) {
-                shortcuts << cm->tabShortcuts()->disabledShortcuts();
-                cm->tabShortcuts()->setDisabledShortcuts(shortcuts);
-            }
+            const QList<QKeySequence> shortcuts = act->shortcuts();
+            if (!shortcuts.isEmpty())
+                setDisabledShortcuts(m_disabledShortcuts + shortcuts);
 
             updateToolBar();
         }
@@ -759,11 +832,13 @@ void MainWindow::enableActionForCommand(QMenu *menu, const Command &command, boo
 void MainWindow::addCommandsToItemMenu(const Command &command, bool passed)
 {
     enableActionForCommand(m_menuItem, command, passed);
+    m_itemMenuCommandTester.start();
 }
 
 void MainWindow::addCommandsToTrayMenu(const Command &command, bool passed)
 {
     enableActionForCommand(m_trayMenu, command, passed);
+    m_trayMenuCommandTester.start();
 }
 
 void MainWindow::nextItemFormat()
@@ -796,6 +871,18 @@ void MainWindow::moveToBottom()
     browser()->move(Qt::Key_End);
 }
 
+int MainWindow::findTabIndexExactMatch(const QString &name)
+{
+    TabWidget *w = ui->tabWidget;
+
+    for( int i = 0; i < w->count(); ++i ) {
+        if ( name == w->tabText(i) )
+            return i;
+    }
+
+    return -1;
+}
+
 void MainWindow::updateTitle(const QVariantMap &data)
 {
     COPYQ_LOG("Updating window title");
@@ -822,11 +909,12 @@ void MainWindow::updateNotifications()
     if (m_notifications == NULL)
         m_notifications = new NotificationDaemon(this);
 
-    const ConfigTabAppearance *appearance = cm->tabAppearance();
-    notificationDaemon()->setNotificationOpacity( appearance->themeColor("notification_bg").alphaF() );
-    notificationDaemon()->setNotificationStyleSheet( appearance->getNotificationStyleSheet() );
+    const Theme theme;
+    notificationDaemon()->setNotificationOpacity( theme.color("notification_bg").alphaF() );
+    notificationDaemon()->setNotificationStyleSheet( theme.getNotificationStyleSheet() );
 
-    int id = cm->value("notification_position").toInt();
+    AppConfig appConfig;
+    int id = appConfig.option<Config::notification_position>();
     NotificationDaemon::Position position;
     switch (id) {
     case 0: position = NotificationDaemon::Top; break;
@@ -838,12 +926,12 @@ void MainWindow::updateNotifications()
     }
     m_notifications->setPosition(position);
 
-    const int x = cm->value("notification_horizontal_offset").toInt();
-    const int y = cm->value("notification_vertical_offset").toInt();
+    const int x = appConfig.option<Config::notification_horizontal_offset>();
+    const int y = appConfig.option<Config::notification_vertical_offset>();
     m_notifications->setOffset(x, y);
 
-    const int w = cm->value("notification_maximum_width").toInt();
-    const int h = cm->value("notification_maximum_height").toInt();
+    const int w = appConfig.option<Config::notification_maximum_width>();
+    const int h = appConfig.option<Config::notification_maximum_height>();
     m_notifications->setMaximumSize(w, h);
 
     m_notifications->updateInterval(0, m_options.itemPopupInterval);
@@ -861,7 +949,7 @@ void MainWindow::updateMonitoringActions()
 {
     if ( !m_actionToggleClipboardStoring.isNull() ) {
         m_actionToggleClipboardStoring->setIcon(
-                    appIcon(m_clipboardStoringDisabled ? AppIconNormal : AppIconDisabled) );
+                    getIcon("", m_clipboardStoringDisabled ? IconCheck : IconBan));
         m_actionToggleClipboardStoring->setText( m_clipboardStoringDisabled
                                                  ? tr("&Enable Clipboard Storing")
                                                  : tr("&Disable Clipboard Storing") );
@@ -891,7 +979,7 @@ void MainWindow::setHideTabs(bool hide)
 
 bool MainWindow::closeMinimizes() const
 {
-    return !m_tray && !m_minimizeUnsupported;
+    return !m_tray;
 }
 
 NotificationDaemon *MainWindow::notificationDaemon()
@@ -902,11 +990,14 @@ NotificationDaemon *MainWindow::notificationDaemon()
     return m_notifications;
 }
 
-ClipboardBrowser *MainWindow::createTab(const QString &name, bool *needSave)
+ClipboardBrowser *MainWindow::createTab(
+        const QString &name, TabNameMatching nameMatch, bool *needSave)
 {
     Q_ASSERT( !name.isEmpty() );
 
-    int i = findTabIndex(name);
+    const int i = nameMatch == MatchExactTabName
+            ? findTabIndexExactMatch(name)
+            : findTabIndex(name);
 
     if (needSave != NULL)
         *needSave = (i == -1);
@@ -914,7 +1005,7 @@ ClipboardBrowser *MainWindow::createTab(const QString &name, bool *needSave)
     if (i != -1)
         return getBrowser(i);
 
-    ClipboardBrowser *c = new ClipboardBrowser(this, m_sharedData);
+    ClipboardBrowser *c = new ClipboardBrowser(m_sharedData, this);
     c->setTabName(name);
     c->loadSettings();
 
@@ -938,36 +1029,32 @@ ClipboardBrowser *MainWindow::createTab(const QString &name, bool *needSave)
     return c;
 }
 
-QAction *MainWindow::createAction(Actions::Id id, const char *slot, QMenu *menu)
+QAction *MainWindow::createAction(int id, const char *slot, QMenu *menu)
 {
-    ConfigTabShortcuts *shortcuts = cm->tabShortcuts();
-    QAction *act = shortcuts->action(id, this, Qt::WindowShortcut);
+    QAction *act = actionForMenuItem(id, this, Qt::WindowShortcut);
     connect(act, SIGNAL(triggered()),
             this, slot, Qt::UniqueConnection);
     menu->addAction(act);
     return act;
 }
 
-QAction *MainWindow::addTrayAction(Actions::Id id)
+QAction *MainWindow::addTrayAction(int id)
 {
-    ConfigTabShortcuts *shortcuts = cm->tabShortcuts();
-    QAction *act = shortcuts->action(id, m_trayMenu, Qt::WindowShortcut);
+    QAction *act = actionForMenuItem(id, m_trayMenu, Qt::WindowShortcut);
     m_trayMenu->addAction(act);
     return act;
 }
 
 void MainWindow::updateTabIcon(const QString &newName, const QString &oldName)
 {
-    const QString icon = cm->getIconNameForTabName(oldName);
-    if ( !icon.isEmpty() ) {
-        cm->setIconNameForTabName(oldName, QString());
-        cm->setIconNameForTabName(newName, icon);
-    }
+    const QString icon = getIconNameForTabName(oldName);
+    if ( !icon.isEmpty() )
+        setIconNameForTabName(newName, icon);
 }
 
-QAction *MainWindow::addItemAction(Actions::Id id, QObject *receiver, const char *slot)
+QAction *MainWindow::addItemAction(int id, QObject *receiver, const char *slot)
 {
-    QAction *act = cm->tabShortcuts()->action(id, getBrowser(), Qt::WidgetShortcut);
+    QAction *act = actionForMenuItem(id, getBrowser(), Qt::WidgetShortcut);
     connect( act, SIGNAL(triggered()), receiver, slot, Qt::UniqueConnection );
     m_menuItem->addAction(act);
     return act;
@@ -999,7 +1086,10 @@ void MainWindow::addCommandsToMenu(QMenu *menu, const QVariantMap &data)
     CommandAction::Type type = (menu == m_menuItem)
             ? CommandAction::ItemCommand : CommandAction::ClipboardCommand;
 
-    QList<QKeySequence> usedShortcuts = cm->tabShortcuts()->disabledShortcuts();
+    QList<QKeySequence> usedShortcuts = m_disabledShortcuts;
+
+    if (menu == m_menuItem)
+        m_activateCurrentItemAction = NULL;
 
     foreach (const Command &command, commands) {
         QString name = command.name;
@@ -1020,6 +1110,14 @@ void MainWindow::addCommandsToMenu(QMenu *menu, const QVariantMap &data)
                     if (act->isEnabled())
                         usedShortcuts.append(shortcut);
                     uniqueShortcuts.append(shortcut);
+
+                    if (menu == m_menuItem
+                            && m_activateCurrentItemAction.isNull()
+                            && isItemActivationShortcut(shortcut))
+                    {
+                        m_activateCurrentItemAction = act;
+                        menu->setDefaultAction(act);
+                    }
                 }
             }
 
@@ -1032,7 +1130,7 @@ void MainWindow::addCommandsToMenu(QMenu *menu, const QVariantMap &data)
                 this, SLOT(onCommandActionTriggered(Command,QVariantMap,int)));
     }
 
-    cm->tabShortcuts()->setDisabledShortcuts(usedShortcuts);
+    setDisabledShortcuts(usedShortcuts);
 
     if (menu == m_menuItem) {
         m_itemMenuCommandTester.setCommands(disabledCommands, addSelectionData(*c, data));
@@ -1050,8 +1148,7 @@ void MainWindow::updateToolBar()
     if ( ui->toolBar->isHidden() )
         return;
 
-    ConfigTabShortcuts *shortcuts = cm->tabShortcuts();
-    QAction *act = shortcuts->action(Actions::File_New, this, Qt::WindowShortcut);
+    QAction *act = actionForMenuItem(Actions::File_New, this, Qt::WindowShortcut);
     ui->toolBar->addAction(act);
 
     foreach ( QAction *action, m_menuItem->actions() ) {
@@ -1107,7 +1204,7 @@ void MainWindow::updateTrayIcon()
 
 void MainWindow::initTray()
 {
-    if ( cm->value("disable_tray").toBool() ) {
+    if ( AppConfig().option<Config::disable_tray>() ) {
         if (m_tray) {
             // Hide tray on Ubuntu (buggy sni-qt)
             m_tray->hide();
@@ -1121,28 +1218,20 @@ void MainWindow::initTray()
         createTrayIfSupported();
     }
 
-    if (!m_tray) {
-        if (m_timerMinimizing.interval() == 0) {
-            // Check if window manager can minimize window properly.
-            // If window is activated while minimizing, assume that minimizing is not supported.
-            initSingleShotTimer( &m_timerMinimizing, 1000 );
-            QApplication::processEvents();
-            m_timerMinimizing.start();
-            showMinimized();
-        } else if (isHidden() && !isMinimized()) {
-            showMinimized();
-        }
-    }
+    if (closeMinimizes() && isHidden() && !isMinimized())
+        minimizeWindow();
 }
 
-void MainWindow::runNextAutomaticCommand()
+void MainWindow::runAutomaticCommand(const Command &command)
 {
-    Q_ASSERT(!m_automaticCommands.isEmpty());
     Q_ASSERT(!m_currentAutomaticCommand);
 
-    const Command &command = m_automaticCommands.first();
-
     const QVariantMap &data = m_automaticCommandTester.data();
+
+    if (command.remove || command.transform) {
+        COPYQ_LOG("Clipboard ignored by \"" + command.name + "\"");
+        m_automaticCommandTester.abort();
+    }
 
     if ( command.input.isEmpty()
          || command.input == mimeItems
@@ -1155,9 +1244,9 @@ void MainWindow::runNextAutomaticCommand()
         addToTab(data, command.tab);
 
     if (m_currentAutomaticCommand)
-        connect(m_currentAutomaticCommand, SIGNAL(destroyed()), SLOT(automaticCommandFinished()));
+        m_automaticCommandTester.waitForAction(m_currentAutomaticCommand);
     else
-        automaticCommandFinished();
+        m_automaticCommandTester.start();
 }
 
 bool MainWindow::isWindowVisible() const
@@ -1167,24 +1256,92 @@ bool MainWindow::isWindowVisible() const
 
 ClipboardBrowser *MainWindow::clipboardTab()
 {
-    return m_options.clipboardTab.isEmpty() ? NULL : createTab(m_options.clipboardTab);
+    return m_options.clipboardTab.isEmpty() ? NULL : tab(m_options.clipboardTab);
+}
+
+void MainWindow::onEscape()
+{
+    if ( browseMode() ) {
+        hideWindow();
+        getBrowser()->setCurrent(0);
+    } else {
+        resetStatus();
+    }
+}
+
+void MainWindow::setDisabledShortcuts(const QList<QKeySequence> &shortcuts)
+{
+    m_disabledShortcuts = shortcuts;
+    updateActionShortcuts();
+}
+
+void MainWindow::updateActionShortcuts(int id)
+{
+    Q_ASSERT(id < m_actions.size());
+    Q_ASSERT(id < m_menuItems.size());
+
+    QAction *action = m_actions[id];
+    if (!action)
+        return;
+
+    QList<QKeySequence> shortcuts = m_menuItems[id].shortcuts;
+    foreach (const QKeySequence &shortcut, m_disabledShortcuts)
+        shortcuts.removeAll(shortcut);
+
+    action->setShortcuts(shortcuts);
+}
+
+void MainWindow::updateActionShortcuts()
+{
+    for (int id = 0; id < m_actions.size(); ++id)
+        updateActionShortcuts(id);
+}
+
+QAction *MainWindow::actionForMenuItem(int id, QWidget *parent, Qt::ShortcutContext context)
+{
+    Q_ASSERT(id < m_menuItems.size());
+
+    m_actions.resize(m_menuItems.size());
+
+    QPointer<QAction> &action = m_actions[id];
+    const MenuItem &item = m_menuItems[id];
+
+    if (!action) {
+        action = new QAction(item.text, parent);
+        action->setShortcutContext(context);
+        parent->addAction(action);
+    }
+
+    action->setIcon( getIcon(item.iconName, item.iconId) );
+    updateActionShortcuts(id);
+
+    return action;
 }
 
 int MainWindow::findTabIndex(const QString &name)
 {
     TabWidget *w = ui->tabWidget;
 
-    for( int i = 0; i < w->count(); ++i )
-        if ( name == w->tabText(i) )
-            return i;
+    const int i = findTabIndexExactMatch(name);
+    if (i != -1)
+        return i;
+
+    // Ignore key hints ('&').
+    if ( !hasKeyHint(name) ) {
+        for( int i = 0; i < w->count(); ++i ) {
+            QString tabName = w->tabText(i);
+            if ( name == removeKeyHint(tabName) )
+                return i;
+        }
+    }
 
     return -1;
 }
 
-ClipboardBrowser *MainWindow::createTab(const QString &name)
+ClipboardBrowser *MainWindow::tab(const QString &name)
 {
     bool needSave;
-    ClipboardBrowser *c = createTab(name, &needSave);
+    ClipboardBrowser *c = createTab(name, MatchSimilarTabName, &needSave);
     if (needSave)
         saveTabPositions();
     c->loadItems();
@@ -1231,7 +1388,7 @@ void MainWindow::showMessage(const QString &title, const QString &msg,
 void MainWindow::showMessage(const QString &title, const QString &msg, ushort icon,
                              int msec, int notificationId)
 {
-    notificationDaemon()->create(title, msg, icon, msec, notificationId);
+    notificationDaemon()->create(title, msg, icon, msec, true, notificationId);
 }
 
 void MainWindow::showClipboardMessage(const QVariantMap &data)
@@ -1240,8 +1397,9 @@ void MainWindow::showClipboardMessage(const QVariantMap &data)
         if (data.isEmpty()) {
             notificationDaemon()->removeNotification(clipboardNotificationId);
         } else {
-            notificationDaemon()->create( data, m_options.clipboardNotificationLines, IconPaste,
-                                          m_options.itemPopupInterval * 1000, clipboardNotificationId );
+            notificationDaemon()->create(
+                        data, m_options.clipboardNotificationLines, IconPaste,
+                        m_options.itemPopupInterval * 1000, false, clipboardNotificationId );
         }
     }
 }
@@ -1266,22 +1424,30 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     if (m_options.hideTabs && key == Qt::Key_Alt)
         setHideTabs(false);
 
-    if (browseMode() && m_options.viMode) {
-        if (c->handleViKey(event))
+    if (m_options.viMode) {
+        if (modifiers == Qt::ControlModifier && key == Qt::Key_BracketLeft) {
+            onEscape();
             return;
-        switch(key) {
-        case Qt::Key_Slash:
-            enterBrowseMode(false);
-            event->accept();
-            return;
-        case Qt::Key_H:
-            previousTab();
-            event->accept();
-            return;
-        case Qt::Key_L:
-            nextTab();
-            event->accept();
-            return;
+        }
+
+        if (browseMode()) {
+            if (handleViKey(event, c))
+                return;
+
+            switch(key) {
+            case Qt::Key_Slash:
+                enterBrowseMode(false);
+                event->accept();
+                return;
+            case Qt::Key_H:
+                previousTab();
+                event->accept();
+                return;
+            case Qt::Key_L:
+                nextTab();
+                event->accept();
+                return;
+            }
         }
     }
 
@@ -1364,12 +1530,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 #endif // Q_OS_MAC
 
         case Qt::Key_Escape:
-            if ( browseMode() ) {
-                hideWindow();
-                getBrowser()->setCurrent(0);
-            } else {
-                resetStatus();
-            }
+            onEscape();
             break;
 
         default:
@@ -1402,19 +1563,14 @@ bool MainWindow::event(QEvent *event)
         updateWindowTransparency(false);
         setHideTabs(m_options.hideTabs);
     } else if (type == QEvent::WindowActivate) {
-        if ( m_timerMinimizing.isActive() ) {
-            // Window manager ignores window minimizing -- hide it instead.
-            m_minimizeUnsupported = true;
-            hide();
-            return true;
-        }
-
         updateWindowTransparency();
     } else if (type == QEvent::WindowDeactivate) {
         m_timerShowWindow.start();
         m_lastWindow.clear();
         updateWindowTransparency();
         setHideTabs(m_options.hideTabs);
+    } else if (type == QEvent::Hide) {
+        m_wasMaximized = isMaximized();
     }
 
     return QMainWindow::event(event);
@@ -1461,76 +1617,86 @@ void MainWindow::loadSettings()
 {
     COPYQ_LOG("Loading configuration");
 
-    ConfigTabAppearance *appearance = cm->tabAppearance();
-    appearance->decorateToolBar(ui->toolBar);
-    appearance->decorateMainWindow(this);
+    loadItemFactorySettings(m_sharedData->itemFactory);
 
-    m_options.confirmExit = cm->value("confirm_exit").toBool();
+    const Theme theme;
+    theme.decorateToolBar(ui->toolBar);
+    theme.decorateMainWindow(this);
+
+    AppConfig appConfig;
+
+    m_options.confirmExit = appConfig.option<Config::confirm_exit>();
 
     // always on top window hint
-    bool alwaysOnTop = cm->value("always_on_top").toBool();
+    bool alwaysOnTop = appConfig.option<Config::always_on_top>();
     setAlwaysOnTop(this, alwaysOnTop);
     setAlwaysOnTop(m_commandDialog.data(), alwaysOnTop);
 
     // Vi mode
-    m_options.viMode = cm->value("vi").toBool();
+    m_options.viMode = appConfig.option<Config::vi>();
+    m_trayMenu->setViModeEnabled(m_options.viMode);
 
-    m_options.transparency = qMax( 0, qMin(100, cm->value("transparency").toInt()) );
-    m_options.transparencyFocused = qMax( 0, qMin(100, cm->value("transparency_focused").toInt()) );
+    m_options.transparency = appConfig.option<Config::transparency>();
+    m_options.transparencyFocused = appConfig.option<Config::transparency_focused>();
     updateWindowTransparency();
 
     // tab bar position
-    ui->tabWidget->setTreeModeEnabled(cm->value("tab_tree").toBool());
-    ui->tabWidget->setTabItemCountVisible(cm->value("show_tab_item_count").toBool());
+    const bool tabTreeEnabled = appConfig.option<Config::tab_tree>();
+    ui->tabWidget->setTreeModeEnabled(tabTreeEnabled);
+    ui->tabWidget->setTabItemCountVisible(appConfig.option<Config::show_tab_item_count>());
+    if (tabTreeEnabled)
+        theme.decorateScrollArea(ui->tabWidget->tabTree());
 
-    m_options.hideTabs = cm->value("hide_tabs").toBool();
+    m_options.hideTabs = appConfig.option<Config::hide_tabs>();
     setHideTabs(m_options.hideTabs);
 
-    bool hideToolbar = cm->value("hide_toolbar").toBool();
+    bool hideToolbar = appConfig.option<Config::hide_toolbar>();
     ui->toolBar->clear();
     ui->toolBar->setHidden(hideToolbar);
-    bool hideToolBarLabels = cm->value("hide_toolbar_labels").toBool();
+    bool hideToolBarLabels = appConfig.option<Config::hide_toolbar_labels>();
     ui->toolBar->setToolButtonStyle(hideToolBarLabels ? Qt::ToolButtonIconOnly
                                                       : Qt::ToolButtonTextUnderIcon);
+
+    m_options.hideMainWindow = appConfig.option<Config::hide_main_window>();
 
     // shared data for browsers
     m_sharedData->loadFromConfiguration();
 
     // create tabs
-    QStringList tabs = cm->savedTabs();
+    QStringList tabs = savedTabs();
     foreach (const QString &name, tabs) {
         bool settingsLoaded;
-        ClipboardBrowser *c = createTab(name, &settingsLoaded);
+        ClipboardBrowser *c = createTab(name, MatchExactTabName, &settingsLoaded);
         if (!settingsLoaded)
             c->loadSettings();
     }
 
     if ( ui->tabWidget->count() == 0 )
-        addTab( cm->defaultTabName() );
+        addTab( defaultTabName() );
 
     ui->tabWidget->updateTabs();
 
     updateContextMenu();
 
     m_options.itemActivationCommands = ActivateNoCommand;
-    if ( cm->value("activate_closes").toBool() )
+    if ( appConfig.option<Config::activate_closes>() )
         m_options.itemActivationCommands |= ActivateCloses;
-    if ( cm->value("activate_focuses").toBool() )
+    if ( appConfig.option<Config::activate_focuses>() )
         m_options.itemActivationCommands |= ActivateFocuses;
-    if ( cm->value("activate_pastes").toBool() )
+    if ( appConfig.option<Config::activate_pastes>() )
         m_options.itemActivationCommands |= ActivatePastes;
 
-    m_options.trayItems = cm->value("tray_items").toInt();
-    m_options.trayItemPaste = cm->value("tray_item_paste").toBool();
-    m_options.trayCommands = cm->value("tray_commands").toBool();
-    m_options.trayCurrentTab = cm->value("tray_tab_is_current").toBool();
-    m_options.trayTabName = cm->value("tray_tab").toString();
-    m_options.trayImages = cm->value("tray_images").toBool();
-    m_options.itemPopupInterval = cm->value("item_popup_interval").toInt();
-    m_options.clipboardNotificationLines = cm->value("clipboard_notification_lines").toInt();
-    m_options.clipboardTab = cm->value("clipboard_tab").toString();
+    m_options.trayItems = appConfig.option<Config::tray_items>();
+    m_options.trayItemPaste = appConfig.option<Config::tray_item_paste>();
+    m_options.trayCommands = appConfig.option<Config::tray_commands>();
+    m_options.trayCurrentTab = appConfig.option<Config::tray_tab_is_current>();
+    m_options.trayTabName = appConfig.option<Config::tray_tab>();
+    m_options.trayImages = appConfig.option<Config::tray_images>();
+    m_options.itemPopupInterval = appConfig.option<Config::item_popup_interval>();
+    m_options.clipboardNotificationLines = appConfig.option<Config::clipboard_notification_lines>();
+    m_options.clipboardTab = appConfig.option<Config::clipboard_tab>();
 
-    m_trayMenu->setStyleSheet( cm->tabAppearance()->getToolTipStyleSheet() );
+    m_trayMenu->setStyleSheet( theme.getToolTipStyleSheet() );
 
     initTray();
 
@@ -1543,27 +1709,27 @@ void MainWindow::loadSettings()
 
     m_lastWindow.clear();
 
+    QSettings settings;
+    settings.beginGroup("Shortcuts");
+    loadShortcuts(&m_menuItems, settings);
+    settings.endGroup();
+
     COPYQ_LOG("Configuration loaded");
 }
 
 void MainWindow::showWindow()
 {
-    if ( m_timerMinimizing.isActive() )
-        return;
-
     if ( isWindowVisible() )
         return;
 
-#ifdef COPYQ_WS_X11
-    /* Re-initialize window in window manager so it can popup on current workspace. */
-    hide();
-#endif
-
-    cm->restoreWindowGeometry(this);
+    moveToCurrentWorkspace(this);
 
     updateFocusWindows();
 
-    showNormal();
+    if (m_wasMaximized || isMaximized())
+        showMaximized();
+    else
+        showNormal();
     raise();
     activateWindow();
 
@@ -1574,10 +1740,9 @@ void MainWindow::showWindow()
         c->setCurrent(0);
     }
 
-    if ( !c->editing() ) {
+    if ( !c->editing() )
         c->scrollTo( c->currentIndex() );
-        c->setFocus();
-    }
+    c->setFocus();
 
     QApplication::setActiveWindow(this);
 
@@ -1587,9 +1752,17 @@ void MainWindow::showWindow()
 void MainWindow::hideWindow()
 {
     if ( closeMinimizes() )
-        showMinimized();
+        minimizeWindow();
     else
         hide();
+}
+
+void MainWindow::minimizeWindow()
+{
+    if (m_options.hideMainWindow)
+        hide();
+    else
+        showMinimized();
 }
 
 bool MainWindow::toggleVisible()
@@ -1604,19 +1777,32 @@ bool MainWindow::toggleVisible()
     return true;
 }
 
-void MainWindow::showBrowser(const ClipboardBrowser *browser)
+void MainWindow::setCurrentTab(const ClipboardBrowser *browser)
 {
     int i = 0;
     for( ; i < ui->tabWidget->count() && getBrowser(i) != browser; ++i ) {}
-    showBrowser(i);
+    setCurrentTab(i);
+}
+
+void MainWindow::showBrowser(const ClipboardBrowser *browser)
+{
+    setCurrentTab(browser);
+    showWindow();
+}
+
+bool MainWindow::setCurrentTab(int index)
+{
+    if ( index < 0 || ui->tabWidget->count() <= index )
+        return false;
+
+    ui->tabWidget->setCurrentIndex(index);
+    return true;
 }
 
 void MainWindow::showBrowser(int index)
 {
-    if ( index >= 0 && index < ui->tabWidget->count() ) {
+    if (setCurrentTab(index))
         showWindow();
-        ui->tabWidget->setCurrentIndex(index);
-    }
 }
 
 void MainWindow::onTrayActionTriggered(uint clipboardItemHash, bool omitPaste)
@@ -1682,7 +1868,7 @@ void MainWindow::tabChanged(int current, int)
 
 void MainWindow::saveTabPositions()
 {
-    cm->setTabs( ui->tabWidget->tabs() );
+    setTabs( ui->tabWidget->tabs() );
 }
 
 void MainWindow::tabsMoved(const QString &oldPrefix, const QString &newPrefix)
@@ -1732,37 +1918,54 @@ void MainWindow::tabCloseRequested(int tab)
 
 void MainWindow::addToTab(const QVariantMap &data, const QString &tabName)
 {
-    createTab(tabName)->addUnique(data);
+    tab(tabName)->addUnique(data);
 }
 
 void MainWindow::updateFirstItem(const QVariantMap &data)
 {
-    bool isClipboard = isClipboardData(data);
-
-#ifdef COPYQ_WS_X11
     // Synchronize clipboard and X11 selection.
-    if ( isClipboard && cm->value("copy_clipboard").toBool() && !clipboardContains(QClipboard::Selection, data) )
+    if (needSyncClipboardToSelection(data))
         emit changeClipboard(data, QClipboard::Selection);
 
-    if ( !isClipboard && cm->value("copy_selection").toBool() && !clipboardContains(QClipboard::Clipboard, data) )
+    if (needSyncSelectionToClipboard(data))
         emit changeClipboard(data, QClipboard::Clipboard);
 
-    if ( !isClipboard && !cm->value("check_selection").toBool() )
-        return;
-#endif
-
-    if ( isClipboard && !cm->value("check_clipboard").toBool() )
-        return;
-
-    ClipboardBrowser *c = clipboardTab();
-    if ( c && c->isLoaded() )
-        c->addUnique(data);
+    if (needStore(data)) {
+        ClipboardBrowser *c = clipboardTab();
+        if ( c && c->isLoaded() )
+            c->addUnique(data);
+    }
 }
 
-void MainWindow::setExitAfterClosed()
+QString MainWindow::getUserOptionsDescription() const
 {
-    m_minimizeUnsupported = true;
-    QApplication::setQuitOnLastWindowClosed(true);
+    ConfigurationManager configurationManager;
+
+    QStringList options = configurationManager.options();
+    options.sort();
+    QString opts;
+    foreach (const QString &option, options)
+        opts.append( option + "\n  " + configurationManager.optionToolTip(option).replace('\n', "\n  ") + '\n' );
+    return opts;
+}
+
+QString MainWindow::getUserOptionValue(const QString &name) const
+{
+    ConfigurationManager configurationManager;
+    return configurationManager.optionValue(name);
+}
+
+void MainWindow::setUserOptionValue(const QString &name, const QString &value)
+{
+    ConfigurationManager configurationManager;
+    if ( configurationManager.setOptionValue(name, value) )
+        emit configurationChanged();
+}
+
+bool MainWindow::hasUserOption(const QString &name) const
+{
+    ConfigurationManager configurationManager;
+    return configurationManager.options().contains(name);
 }
 
 QString syncCommand(const QString &type)
@@ -1782,7 +1985,7 @@ void MainWindow::runAutomaticCommands(const QVariantMap &data)
         return;
 
     QList<Command> commands;
-    const QString tabName = cm->defaultTabName();
+    const QString tabName = defaultTabName();
     foreach (const Command &command, m_commands) {
         if (command.automatic && canExecuteCommand(command, data, tabName)) {
             commands.append(command);
@@ -1791,26 +1994,29 @@ void MainWindow::runAutomaticCommands(const QVariantMap &data)
         }
     }
 
-    // Clear window title and tooltip.
-    if (isClipboard)
+    // Add new clipboard to the first tab (if configured so).
+    if ( needSyncClipboardToSelection(data)
+            || needSyncSelectionToClipboard(data)
+            || needStore(data) )
+    {
+        commands.append(automaticCommand("Add Item from Clipboard", "updateFirst()"));
+    }
+
+    if (isClipboard) {
+        // First, clear window title and tooltip.
         commands.prepend(automaticCommand("Reset Window Title" ,"updateTitle('')"));
 
-    // Add new clipboard to the first tab (if configured so).
-    commands.append(automaticCommand("Add Item from Clipboard", "updateFirst()"));
-
-    // Set window title, tooltip and show notification.
-    if (isClipboard)
+        // Lastly, set window title, tooltip and show notification.
+        // This may not be executed if any previous user-defined automatic
+        // command chooses to ignore clipboard content.
         commands.append(automaticCommand("Set Window Title", "updateTitle()"));
+    }
 
-    abortAutomaticCommands();
+    m_automaticCommandTester.abort();
     m_automaticCommandTester.setCommands(commands, data);
 
-    if (m_currentAutomaticCommand) {
-        connect(m_currentAutomaticCommand, SIGNAL(destroyed()),
-                &m_automaticCommandTester, SLOT(start()), Qt::UniqueConnection);
-    } else {
+    if (!m_currentAutomaticCommand)
         m_automaticCommandTester.start();
-    }
 }
 
 void MainWindow::nextTab()
@@ -1847,13 +2053,17 @@ void MainWindow::setClipboard(const QVariantMap &data)
 {
     setClipboard(data, QClipboard::Clipboard);
 #ifdef COPYQ_WS_X11
-    if ( cm->value("copy_clipboard").toBool() )
-        setClipboard(data, QClipboard::Selection);
+    setClipboard(data, QClipboard::Selection);
 #endif
 }
 
 void MainWindow::activateCurrentItem()
 {
+    if ( !m_activateCurrentItemAction.isNull() ) {
+        m_activateCurrentItemAction->trigger();
+        return;
+    }
+
     // Copy current item or selection to clipboard.
     ClipboardBrowser *c = browser();
 
@@ -1891,7 +2101,7 @@ void MainWindow::disableClipboardStoring(bool disable)
     m_clipboardStoringDisabled = disable;
 
     updateMonitoringActions();
-    updateIcon();
+    updateIconSnip();
 
     if (m_clipboardStoringDisabled)
         clearTitle();
@@ -1912,14 +2122,10 @@ void MainWindow::toggleClipboardStoring()
 
 void MainWindow::abortAutomaticCommands()
 {
-    m_automaticCommands.clear();
     m_automaticCommandTester.abort();
 
-    if (m_currentAutomaticCommand) {
+    if (m_currentAutomaticCommand)
         COPYQ_LOG("Aborting automatic commands (current is \"" + m_currentAutomaticCommand->name() + "\")");
-        disconnect(m_currentAutomaticCommand, SIGNAL(destroyed()),
-                   this, SLOT(automaticCommandFinished()));
-    }
 }
 
 QStringList MainWindow::tabs() const
@@ -1971,16 +2177,16 @@ void MainWindow::createTrayIfSupported()
 
 void MainWindow::updateFocusWindows()
 {
-    if ( isActiveWindow() || (!m_options.activateFocuses() && !m_options.activatePastes()) )
+    if ( isActiveWindow() )
+        return;
+
+    if ( !m_options.activateFocuses() && !m_options.activatePastes() )
         return;
 
     PlatformPtr platform = createPlatformNativeInterface();
-
-    if ( m_options.activatePastes() || m_options.activateFocuses() ) {
-        PlatformWindowPtr lastWindow = platform->getCurrentWindow();
-        if (lastWindow)
-            m_lastWindow = lastWindow;
-    }
+    PlatformWindowPtr lastWindow = platform->getCurrentWindow();
+    if (lastWindow)
+        m_lastWindow = lastWindow;
 }
 
 void MainWindow::enterSearchMode(const QString &txt)
@@ -2075,24 +2281,21 @@ void MainWindow::clearTrayMenu()
     m_trayMenu->clearAllActions();
 }
 
+void MainWindow::openLogDialog()
+{
+    openDialog<LogDialog>(this);
+}
+
 void MainWindow::openAboutDialog()
 {
-    QScopedPointer<AboutDialog> aboutDialog( new AboutDialog(this) );
-    aboutDialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    aboutDialog->setWindowIcon(appIcon());
-    aboutDialog->activateWindow();
-    aboutDialog->show();
-    aboutDialog.take();
+    openDialog<AboutDialog>(this);
 }
 
 void MainWindow::showClipboardContent()
 {
-    QScopedPointer<ClipboardDialog> clipboardDialog(new ClipboardDialog(this));
-    connect( clipboardDialog.data(), SIGNAL(changeClipboard(QVariantMap)),
+    ClipboardDialog *clipboardDialog = openDialog<ClipboardDialog>(this);
+    connect( clipboardDialog, SIGNAL(changeClipboard(QVariantMap)),
              this, SLOT(setClipboard(QVariantMap)) );
-    clipboardDialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    clipboardDialog->show();
-    clipboardDialog.take();
 }
 
 void MainWindow::showProcessManagerDialog()
@@ -2105,8 +2308,12 @@ WId MainWindow::openActionDialog(const QVariantMap &data)
     QScopedPointer<ActionDialog> actionDialog( m_actionHandler->createActionDialog(ui->tabWidget->tabs()) );
     connect( actionDialog.data(), SIGNAL(saveCommand(Command)),
              this, SLOT(onSaveCommand(Command)) );
+
     actionDialog->setWindowIcon(appIcon(AppIconRunning));
     actionDialog->setInputData( addSelectionData(*browser(), data) );
+
+    actionDialog->setOutputIndex(getBrowser()->currentIndex());
+
     actionDialog->show();
     return stealFocus(*actionDialog.take());
 }
@@ -2116,7 +2323,25 @@ void MainWindow::openPreferences()
     if ( !isEnabled() )
         return;
 
-    cm->exec();
+    if (cm) {
+        cm->activateWindow();
+        return;
+    }
+
+    ConfigurationManager configurationManager(m_sharedData->itemFactory, this);
+    WindowGeometryGuard::create(&configurationManager);
+
+    // notify window if configuration changes
+    connect( &configurationManager, SIGNAL(configurationChanged()),
+             this, SIGNAL(configurationChanged()) );
+    connect( &configurationManager, SIGNAL(error(QString)),
+             this, SLOT(showError(QString)) );
+    connect( &configurationManager, SIGNAL(openCommandDialogRequest()),
+             this, SLOT(openCommands()) );
+
+    cm = &configurationManager;
+    configurationManager.exec();
+    cm = NULL;
 }
 
 void MainWindow::openCommands()
@@ -2128,7 +2353,16 @@ void MainWindow::openCommands()
         m_commandDialog->show();
         m_commandDialog->activateWindow();
     } else {
-        m_commandDialog = new CommandDialog(cm);
+        const QList<Command> pluginCommands = m_sharedData->itemFactory->commands();
+        QStringList formats = m_sharedData->itemFactory->formatsToSave();
+        formats.prepend(mimeText);
+        formats.removeDuplicates();
+
+        QWidget *parent = this;
+        if (cm)
+            parent = cm;
+
+        m_commandDialog = new CommandDialog(pluginCommands, formats, parent);
         if (windowFlags() & Qt::WindowStaysOnTopHint)
             setAlwaysOnTop(m_commandDialog.data(), true);
         m_commandDialog->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -2137,7 +2371,7 @@ void MainWindow::openCommands()
         connect(m_commandDialog, SIGNAL(commandsSaved()), this, SLOT(onCommandDialogSaved()));
     }
 
-    if (cm->isVisible())
+    if (cm && cm->isVisible())
         m_commandDialog->setWindowModality(Qt::ApplicationModal);
 }
 
@@ -2170,7 +2404,7 @@ ClipboardBrowser *MainWindow::browserForItem(const QModelIndex &index)
 ClipboardBrowser *MainWindow::addTab(const QString &name)
 {
     TabWidget *w = ui->tabWidget;
-    ClipboardBrowser *c = createTab(name);
+    ClipboardBrowser *c = createTab(name, MatchExactTabName);
     w->setCurrentIndex( w->count()-1 );
 
     return c;
@@ -2230,10 +2464,9 @@ bool MainWindow::saveTab(const QString &fileName, int tab_index)
 
     int i = tab_index >= 0 ? tab_index : ui->tabWidget->currentIndex();
     ClipboardBrowser *c = browser(i);
-    ClipboardModel *model = static_cast<ClipboardModel *>( c->model() );
 
     out << QByteArray("CopyQ v2") << c->tabName();
-    serializeData(*model, &out);
+    serializeData(*c->model(), &out);
 
     file.close();
 
@@ -2264,6 +2497,7 @@ void MainWindow::saveTabs()
 {
     for( int i = 0; i < ui->tabWidget->count(); ++i )
         getBrowser(i)->saveUnsavedItems();
+    ui->tabWidget->saveTabInfo();
 }
 
 bool MainWindow::loadTab(const QString &fileName)
@@ -2285,10 +2519,9 @@ bool MainWindow::loadTab(const QString &fileName)
     // Find unique tab name.
     renameToUnique(&tabName, ui->tabWidget->tabs());
 
-    ClipboardBrowser *c = createTab(tabName);
-    ClipboardModel *model = static_cast<ClipboardModel *>( c->model() );
+    ClipboardBrowser *c = createTab(tabName, MatchExactTabName);
 
-    deserializeData(model, &in);
+    deserializeData(c->model(), &in);
 
     c->loadItems();
     c->saveItems();
@@ -2525,7 +2758,7 @@ void MainWindow::setTabIcon()
 
 void MainWindow::setTabIcon(const QString &tabName)
 {
-    IconSelectDialog dialog( cm->getIconNameForTabName(tabName), this );
+    IconSelectDialog dialog( getIconNameForTabName(tabName), this );
 
     if ( dialog.exec() == QDialog::Accepted )
         setTabIcon(tabName, dialog.selectedIcon());
@@ -2534,7 +2767,7 @@ void MainWindow::setTabIcon(const QString &tabName)
 void MainWindow::setTabIcon(const QString &tabName, const QString &icon)
 {
     if ( tabs().contains(tabName) || ui->tabWidget->isTabGroup(tabName) ) {
-        cm->setIconNameForTabName(tabName, icon);
+        setIconNameForTabName(tabName, icon);
         ui->tabWidget->updateTabIcon(tabName);
     }
 }

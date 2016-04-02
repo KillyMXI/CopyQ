@@ -253,7 +253,7 @@ QWidget *ItemEncryptedLoader::createSettingsWidget(QWidget *parent)
     return w;
 }
 
-bool ItemEncryptedLoader::canLoadItems(QFile *file)
+bool ItemEncryptedLoader::canLoadItems(QFile *file) const
 {
     QDataStream stream(file);
 
@@ -264,7 +264,7 @@ bool ItemEncryptedLoader::canLoadItems(QFile *file)
             && (header == dataFileHeader || header == dataFileHeaderV2);
 }
 
-bool ItemEncryptedLoader::canSaveItems(const QAbstractItemModel &model)
+bool ItemEncryptedLoader::canSaveItems(const QAbstractItemModel &model) const
 {
     const QString tabName = model.property("tabName").toString();
 
@@ -275,8 +275,8 @@ bool ItemEncryptedLoader::canSaveItems(const QAbstractItemModel &model)
         QString tabName1 = tabName;
 
         // Ignore ampersands (usually just for underlining mnemonics) if none is specified.
-        if ( !encryptTabName.contains('&') )
-            tabName1.remove('&');
+        if ( !hasKeyHint(encryptTabName) )
+            removeKeyHint(tabName1);
 
         // Ignore path in tab tree if none path separator is specified.
         if ( !encryptTabName.contains('/') ) {
@@ -545,7 +545,7 @@ void ItemEncryptedLoader::onGpgProcessFinished(int exitCode, QProcess::ExitStatu
             if (exitStatus != QProcess::NormalExit)
                 error = error.arg(m_gpgProcess->errorString());
             else if (exitCode != 0)
-                error = error.arg(QString::fromUtf8(m_gpgProcess->readAllStandardError()));
+                error = error.arg(getTextData(m_gpgProcess->readAllStandardError()));
             else if ( m_gpgProcess->error() != QProcess::UnknownError )
                 error = error.arg(m_gpgProcess->errorString());
             else if ( !keysExist() )

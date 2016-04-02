@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -44,6 +44,8 @@ public:
     bool isValid() const;
 
 private:
+    bool hasFocus();
+
     void sendKeyPress(int modifier, int key);
 
     Window m_window;

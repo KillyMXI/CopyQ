@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -47,9 +47,9 @@ private slots:
     void onResetButtonClicked();
 
 private:
-    void processKey(int key, Qt::KeyboardModifiers mods);
+    void processKey(int key, int mods);
 
-    Qt::KeyboardModifiers getModifiers(const QKeyEvent &event);
+    int getModifiers(const QKeyEvent &event);
 
     Ui::ShortcutDialog *ui;
     QKeySequence m_shortcut;

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,16 +24,11 @@
 
 #include <QDialog>
 #include <QHash>
-#include <QScopedPointer>
 
 namespace Ui {
     class ConfigurationManager;
 }
 
-class ClipboardModel;
-class ConfigTabAppearance;
-class ConfigTabShortcuts;
-class IconFactory;
 class ItemFactory;
 class Option;
 class QAbstractButton;
@@ -41,8 +36,6 @@ class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QListWidgetItem;
-class QMainWindow;
-class QSettings;
 class QSpinBox;
 
 /**
@@ -53,86 +46,24 @@ class ConfigurationManager : public QDialog
 {
     Q_OBJECT
 
-    friend class MainWindow;
-
 public:
+    explicit ConfigurationManager(ItemFactory *itemFactory = NULL, QWidget *parent = NULL);
+
     ~ConfigurationManager();
-
-    /** Return singleton instance. */
-    static ConfigurationManager *instance();
-
-    /** Destroy singleton instance. */
-    static void drop();
-
-    /** Load settings from default file. */
-    void loadSettings();
-
-    /** Return value for option with given @a name. */
-    QVariant value(const QString &name) const;
-    /** Set @a value for option with given @a name. */
-    void setValue(const QString &name, const QVariant &value);
 
     /** Return list of options that can be set or view using command line. */
     QStringList options() const;
+
+    /** Return value of an option. */
+    QString optionValue(const QString &name) const;
+
+    /** Set value of an option and returns true only if the value changes. */
+    bool setOptionValue(const QString &name, const QString &value);
+
     /** Return tooltip text for option with given @a name. */
     QString optionToolTip(const QString &name) const;
 
-    /** Load items from configuration file. */
-    ItemLoaderInterfacePtr loadItems(
-            ClipboardModel &model //!< Model for items.
-            );
-    /** Save items to configuration file. */
-    bool saveItems(const ClipboardModel &model //!< Model containing items to save.
-            , const ItemLoaderInterfacePtr &loader);
-    /** Save items with other plugin with higher priority than current one (@a loader). */
-    bool saveItemsWithOther(ClipboardModel &model //!< Model containing items to save.
-            , ItemLoaderInterfacePtr *loader);
-    /** Remove configuration file for items. */
-    void removeItems(const QString &tabName //!< See ClipboardBrowser::getID().
-            );
-    /** Move configuration file for items. */
-    void moveItems(
-            const QString &oldId, //!< See ClipboardBrowser::getID().
-            const QString &newId //!< See ClipboardBrowser::getID().
-            );
-
-    /** Set available tab names (for combo boxes). */
-    void setTabs(const QStringList &tabs);
-
-    /** Return list of saved tabs (ordered by "tabs" option if possible). */
-    QStringList savedTabs() const;
-
-    ConfigTabAppearance *tabAppearance() const;
-
-    ConfigTabShortcuts *tabShortcuts() const;
-
-    QString getIconNameForTabName(const QString &tabName) const;
-    void setIconNameForTabName(const QString &name, const QString &icon);
-    QIcon getIconForTabName(const QString &tabName) const;
-
     void setVisible(bool visible);
-
-    ItemFactory *itemFactory() const { return m_itemFactory; }
-    IconFactory *iconFactory() const { return m_iconFactory.data(); }
-
-    /**
-     * Register window for saving and restoring geometry.
-     */
-    void registerWindowGeometry(QWidget *window);
-
-    void saveWindowGeometry(QWidget *window);
-    void restoreWindowGeometry(QWidget *window);
-
-    bool eventFilter(QObject *object, QEvent *event);
-
-    QByteArray mainWindowState(const QString &mainWindowObjectName);
-    void saveMainWindowState(const QString &mainWindowObjectName, const QByteArray &state);
-
-    QString defaultTabName() const;
-
-    QStringList tabs() const;
-
-    void initTabComboBox(QComboBox *comboBox) const;
 
 public slots:
     void done(int result);
@@ -143,8 +74,7 @@ signals:
 
     void error(const QString &error);
 
-protected:
-    static ConfigurationManager *createInstance(QWidget *parent);
+    void openCommandDialogRequest();
 
 private slots:
     void apply();
@@ -153,24 +83,16 @@ private slots:
     void on_checkBoxMenuTabIsCurrent_stateChanged(int);
     void on_spinBoxTrayItems_valueChanged(int value);
 
-    void restoreWindowGeometryOnTimer();
-
 private:
-    explicit ConfigurationManager(QWidget *parent);
+    /** Load settings from default file. */
+    void loadSettings();
 
     void updateCommandItem(QListWidgetItem *item);
     void shortcutButtonClicked(QObject *button);
 
-    /**
-     * @return File name for data file with items.
-     */
-    QString itemFileName(const QString &id) const;
-
-    bool createItemDirectory();
-
     void initTabIcons();
 
-    void initPluginWidgets();
+    void initPluginWidgets(ItemFactory *itemFactory);
 
     void initLanguages();
 
@@ -181,37 +103,23 @@ private:
     void setAutostartEnable();
 
     void initOptions();
-    void bind(const char *optionKey, QCheckBox *obj, bool defaultValue);
-    void bind(const char *optionKey, QSpinBox  *obj, int defaultValue);
-    void bind(const char *optionKey, QLineEdit *obj, const QString &defaultValue);
-    void bind(const char *optionKey, QComboBox *obj, int defaultValue);
-    void bind(const char *optionKey, const QVariant &defaultValue);
 
-    void updateIcons();
+    template <typename Config, typename Widget>
+    void bind(Widget *obj);
 
-    void initTabComboBox(QComboBox *comboBox, const QStringList &tabs) const;
-    void updateTabComboBoxes(const QStringList &tabs);
+    template <typename Config>
+    void bind();
+
+    void bind(const QString &optionKey, QCheckBox *obj, bool defaultValue);
+    void bind(const QString &optionKey, QSpinBox  *obj, int defaultValue);
+    void bind(const QString &optionKey, QLineEdit *obj, const QString &defaultValue);
+    void bind(const QString &optionKey, QComboBox *obj, int defaultValue);
+    void bind(const QString &optionKey, const QVariant &defaultValue);
+
     void updateTabComboBoxes();
 
-    static ConfigurationManager *m_Instance;
     Ui::ConfigurationManager *ui;
     QHash<QString, Option> m_options;
-    QHash<QString, QString> m_tabIcons;
-
-    ItemFactory *m_itemFactory;
-    QScopedPointer<IconFactory> m_iconFactory;
-
-    bool m_optionWidgetsLoaded;
 };
-
-QIcon getIconFromResources(const QString &iconName);
-
-QIcon getIcon(const QString &themeName, ushort iconId);
-
-QIcon getIcon(const QVariant &iconOrIconId);
-
-void setDefaultTabItemCounterStyle(QWidget *widget);
-
-void setComboBoxItems(QComboBox *comboBox, const QStringList &items);
 
 #endif // CONFIGURATIONMANAGER_H

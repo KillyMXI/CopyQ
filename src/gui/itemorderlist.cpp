@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,7 +20,6 @@
 #include "gui/itemorderlist.h"
 #include "ui_itemorderlist.h"
 
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
 
@@ -100,9 +99,9 @@ QWidget *ItemOrderList::widget(int row) const
     return m_items[listItem(row)].widget;
 }
 
-ItemOrderList::ItemPtr ItemOrderList::item(int row) const
+QVariant ItemOrderList::data(int row) const
 {
-    return m_items[listItem(row)].item;
+    return m_items[listItem(row)].item->data();
 }
 
 int ItemOrderList::itemCount() const

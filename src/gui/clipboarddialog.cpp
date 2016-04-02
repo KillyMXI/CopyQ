@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,9 +23,9 @@
 #include "common/common.h"
 #include "common/contenttype.h"
 #include "common/mimetypes.h"
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
+#include "gui/windowgeometryguard.h"
 
 #include <QListWidgetItem>
 #include <QUrl>
@@ -115,12 +115,12 @@ void ClipboardDialog::init()
     ui = new Ui::ClipboardDialog;
     ui->setupUi(this);
 
-    setWindowIcon( ConfigurationManager::instance()->iconFactory()->appIcon() );
+    setWindowIcon(appIcon());
 
     ui->horizontalLayout->setStretchFactor(1, 1);
     ui->listWidgetFormats->setCurrentRow(0);
 
-    ConfigurationManager::instance()->registerWindowGeometry(this);
+    WindowGeometryGuard::create(this);
 
     ui->actionRemove_Format->setIcon( getIcon("list-remove", IconRemove) );
     ui->actionRemove_Format->setShortcut(shortcutToRemove());

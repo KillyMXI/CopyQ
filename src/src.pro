@@ -23,7 +23,8 @@ FORMS += \
     ui/processmanagerdialog.ui \
     ui/commanddialog.ui \
     ui/commandedit.ui \
-    ui/addcommanddialog.ui
+    ui/addcommanddialog.ui \
+    ui/logdialog.ui
 HEADERS += \
     app/app.h \
     app/clipboardclient.h \
@@ -108,9 +109,16 @@ HEADERS += \
     gui/addcommanddialog.h \
     common/commandtester.h \
     gui/filtercompleter.h \
-    tests/tests_common.h \
     common/sleeptimer.h \
-    tests/test_utils.h
+    tests/test_utils.h \
+    gui/filedialog.h \
+    gui/windowgeometryguard.h \
+    gui/logdialog.h \
+    common/appconfig.h \
+    gui/tabicons.h \
+    item/itemstore.h \
+    gui/theme.h \
+    gui/menuitems.h
 SOURCES += \
     app/app.cpp \
     app/clipboardclient.cpp \
@@ -187,7 +195,15 @@ SOURCES += \
     gui/commandaction.cpp \
     gui/addcommanddialog.cpp \
     common/commandtester.cpp \
-    gui/filtercompleter.cpp
+    gui/filtercompleter.cpp \
+    gui/filedialog.cpp \
+    gui/windowgeometryguard.cpp \
+    gui/logdialog.cpp \
+    common/appconfig.cpp \
+    gui/tabicons.cpp \
+    item/itemstore.cpp \
+    gui/theme.cpp \
+    gui/menuitems.cpp
 
 macx {
     # Copy the custom Info.plist to the app bundle

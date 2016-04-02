@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -63,4 +63,5 @@ void DummyClipboard::setData(Mode mode, const QVariantMap &dataMap)
 void DummyClipboard::onChanged(QClipboard::Mode mode)
 {
     if (mode == QClipboard::Clipboard)
-        emit changed(Clipboard); }
+        emit changed(Clipboard);
+}

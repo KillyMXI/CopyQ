@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,6 +20,7 @@
 #include "configurationmanager.h"
 #include "ui_configurationmanager.h"
 
+#include "common/appconfig.h"
 #include "common/command.h"
 #include "common/common.h"
 #include "common/config.h"
@@ -30,6 +31,8 @@
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
 #include "gui/pluginwidget.h"
+#include "gui/tabicons.h"
+#include "gui/windowgeometryguard.h"
 #include "item/clipboardmodel.h"
 #include "item/itemdelegate.h"
 #include "item/itemfactory.h"
@@ -42,7 +45,6 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QSettings>
-#include <QTimer>
 #include <QTranslator>
 
 #ifdef Q_OS_WIN
@@ -57,10 +59,12 @@ namespace {
 
 class PluginItem : public ItemOrderList::Item {
 public:
-    explicit PluginItem(const ItemLoaderInterfacePtr &loader)
+    explicit PluginItem(ItemLoaderInterface *loader)
         : m_loader(loader)
     {
     }
+
+    QVariant data() const { return m_loader->id(); }
 
 private:
     QWidget *createWidget(QWidget *parent) const
@@ -68,296 +72,50 @@ private:
         return new PluginWidget(m_loader, parent);
     }
 
-    ItemLoaderInterfacePtr m_loader;
+    ItemLoaderInterface *m_loader;
 };
 
-QString defaultClipboardTabName()
+QString nativeLanguageName(const QString &localeName)
 {
-    return ConfigurationManager::tr(
-                "&clipboard", "Default name of the tab that automatically stores new clipboard content");
-}
+    // Traditional Chinese
+    if (localeName == "zh_TW")
+        return QString::fromUtf8("\xe6\xad\xa3\xe9\xab\x94\xe4\xb8\xad\xe6\x96\x87");
 
-void printItemFileError(const QString &id, const QString &fileName, const QFile &file)
-{
-    log( ConfigurationManager::tr("Cannot save tab %1 to %2 (%3)!")
-         .arg( quoteString(id) )
-         .arg( quoteString(fileName) )
-         .arg( file.errorString() )
-         , LogError );
-}
+    // Simplified Chinese
+    if (localeName == "zh_CN")
+        return QString::fromUtf8("\xe7\xae\x80\xe4\xbd\x93\xe4\xb8\xad\xe6\x96\x87");
 
-bool needToSaveItemsAgain(const QAbstractItemModel &model, const ItemFactory &itemFactory,
-                          const ItemLoaderInterfacePtr &currentLoader)
-{
-    if (!currentLoader)
-        return false;
-
-    bool saveWithCurrent = true;
-    foreach ( const ItemLoaderInterfacePtr &loader, itemFactory.loaders() ) {
-        if ( itemFactory.isLoaderEnabled(loader) && loader->canSaveItems(model) )
-            return loader != currentLoader;
-        else if (loader == currentLoader)
-            saveWithCurrent = false;
-    }
-
-    return !saveWithCurrent;
+    return QLocale(localeName).nativeLanguageName();
 }
 
 } // namespace
 
-// singleton
-ConfigurationManager *ConfigurationManager::m_Instance = 0;
-
-ConfigurationManager *ConfigurationManager::instance()
-{
-    Q_ASSERT(m_Instance != NULL);
-    return m_Instance;
-}
-
-ConfigurationManager::ConfigurationManager(QWidget *parent)
+ConfigurationManager::ConfigurationManager(ItemFactory *itemFactory, QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::ConfigurationManager)
     , m_options()
-    , m_tabIcons()
-    , m_itemFactory(new ItemFactory(this))
-    , m_iconFactory(new IconFactory)
-    , m_optionWidgetsLoaded(false)
 {
     ui->setupUi(this);
-    setWindowIcon(iconFactory()->appIcon());
+    setWindowIcon(appIcon());
 
-    if ( !itemFactory()->hasLoaders() )
-        ui->tabItems->deleteLater();
+    if ( itemFactory && itemFactory->hasLoaders() )
+        initPluginWidgets(itemFactory);
+    else
+        ui->tabItems->hide();
 
     initOptions();
 
-    connect(m_itemFactory, SIGNAL(error(QString)), SIGNAL(error(QString)));
+    connect( ui->configTabShortcuts, SIGNAL(openCommandDialogRequest()),
+             this, SIGNAL(openCommandDialogRequest()));
+
+    ui->configTabAppearance->createPreview(itemFactory);
+
+    loadSettings();
 }
 
 ConfigurationManager::~ConfigurationManager()
 {
-    m_Instance = NULL;
     delete ui;
-}
-
-ItemLoaderInterfacePtr ConfigurationManager::loadItems(ClipboardModel &model)
-{
-    if ( !createItemDirectory() )
-        return ItemLoaderInterfacePtr();
-
-    const QString tabName = model.property("tabName").toString();
-    const QString fileName = itemFileName(tabName);
-
-    // Load file with items.
-    QFile file(fileName);
-    if ( !file.exists() ) {
-        // Try to open temporary file if regular file doesn't exist.
-        QFile tmpFile(fileName + ".tmp");
-        if ( tmpFile.exists() )
-            tmpFile.rename(fileName);
-    }
-
-    ItemLoaderInterfacePtr loader;
-
-    model.setDisabled(true);
-
-    if ( file.exists() ) {
-        COPYQ_LOG( QString("Tab \"%1\": Loading items").arg(tabName) );
-        if ( file.open(QIODevice::ReadOnly) )
-            loader = itemFactory()->loadItems(&model, &file);
-        saveItemsWithOther(model, &loader);
-    } else {
-        COPYQ_LOG( QString("Tab \"%1\": Creating new tab").arg(tabName) );
-        if ( file.open(QIODevice::WriteOnly) ) {
-            file.close();
-            loader = itemFactory()->initializeTab(&model);
-            saveItems(model, loader);
-        }
-    }
-
-    file.close();
-
-    if (loader) {
-        COPYQ_LOG( QString("Tab \"%1\": %2 items loaded").arg(tabName).arg(model.rowCount()) );
-    } else {
-        model.removeRows(0, model.rowCount());
-        COPYQ_LOG( QString("Tab \"%1\": Disabled").arg(tabName) );
-    }
-
-    model.setDisabled(!loader);
-
-    return loader;
-}
-
-bool ConfigurationManager::saveItems(const ClipboardModel &model,
-                                     const ItemLoaderInterfacePtr &loader)
-{
-    const QString tabName = model.property("tabName").toString();
-    const QString fileName = itemFileName(tabName);
-
-    if ( !createItemDirectory() )
-        return false;
-
-    // Save to temp file.
-    QFile file( fileName + ".tmp" );
-    if ( !file.open(QIODevice::WriteOnly) ) {
-        printItemFileError(tabName, fileName, file);
-        return false;
-    }
-
-    COPYQ_LOG( QString("Tab \"%1\": Saving %2 items").arg(tabName).arg(model.rowCount()) );
-
-    if ( loader->saveItems(model, &file) ) {
-        // Overwrite previous file.
-        QFile oldTabFile(fileName);
-        if (oldTabFile.exists() && !oldTabFile.remove())
-            printItemFileError(tabName, fileName, oldTabFile);
-        else if ( file.rename(fileName) )
-            COPYQ_LOG( QString("Tab \"%1\": Items saved").arg(tabName) );
-        else
-            printItemFileError(tabName, fileName, file);
-    } else {
-        COPYQ_LOG( QString("Tab \"%1\": Failed to save items!").arg(tabName) );
-    }
-
-    return true;
-}
-
-bool ConfigurationManager::saveItemsWithOther(ClipboardModel &model,
-                                              ItemLoaderInterfacePtr *loader)
-{
-    if ( !needToSaveItemsAgain(model, *itemFactory(), *loader) )
-        return false;
-
-    model.setDisabled(true);
-
-    COPYQ_LOG( QString("Tab \"%1\": Saving items using other plugin")
-               .arg(model.property("tabName").toString()) );
-
-    (*loader)->uninitializeTab(&model);
-    *loader = itemFactory()->initializeTab(&model);
-    if ( *loader && saveItems(model, *loader) ) {
-        model.setDisabled(false);
-        return true;
-    } else {
-        COPYQ_LOG( QString("Tab \"%1\": Failed to re-save items")
-               .arg(model.property("tabName").toString()) );
-    }
-
-    return false;
-}
-
-void ConfigurationManager::removeItems(const QString &tabName)
-{
-    const QString tabFileName = itemFileName(tabName);
-    QFile::remove(tabFileName);
-    QFile::remove(tabFileName + ".tmp");
-}
-
-void ConfigurationManager::moveItems(const QString &oldId, const QString &newId)
-{
-    const QString oldFileName = itemFileName(oldId);
-    const QString newFileName = itemFileName(newId);
-
-    if ( oldFileName != newFileName && QFile::copy(oldFileName, newFileName) ) {
-        QFile::remove(oldFileName);
-    } else {
-        COPYQ_LOG( QString("Failed to move items from \"%1\" (tab \"%2\") to \"%3\" (tab \"%4\")")
-                   .arg(oldFileName).arg(oldId)
-                   .arg(newFileName).arg(newId) );
-    }
-}
-
-QString ConfigurationManager::itemFileName(const QString &id) const
-{
-    QString part( id.toUtf8().toBase64() );
-    part.replace( QChar('/'), QString('-') );
-    return getConfigurationFilePath("_tab_") + part + QString(".dat");
-}
-
-bool ConfigurationManager::createItemDirectory()
-{
-    QDir settingsDir( settingsDirectoryPath() );
-    if ( !settingsDir.mkpath(".") ) {
-        log( tr("Cannot create directory for settings %1!")
-             .arg(quoteString(settingsDir.path()) ),
-             LogError );
-
-        return false;
-    }
-
-    return true;
-}
-
-void ConfigurationManager::registerWindowGeometry(QWidget *window)
-{
-    window->installEventFilter(this);
-    restoreWindowGeometry(window);
-}
-
-void ConfigurationManager::saveWindowGeometry(QWidget *window)
-{
-    if ( window->property("CopyQ_ignore_geometry_changes").toBool() )
-        return;
-
-    bool openOnCurrentScreen = value("open_windows_on_current_screen").toBool();
-    ::saveWindowGeometry(window, openOnCurrentScreen);
-}
-
-void ConfigurationManager::restoreWindowGeometry(QWidget *window)
-{
-    if ( window->property("CopyQ_ignore_geometry_changes").toBool() )
-        return;
-
-    window->setProperty("CopyQ_ignore_geometry_changes", true);
-
-    bool openOnCurrentScreen = value("open_windows_on_current_screen").toBool();
-    ::restoreWindowGeometry(window, openOnCurrentScreen);
-
-    QTimer *timer = new QTimer(window);
-    initSingleShotTimer( timer, 250, this, SLOT(restoreWindowGeometryOnTimer()) );
-    connect( timer, SIGNAL(timeout()), timer, SLOT(deleteLater()) );
-    timer->start();
-}
-
-bool ConfigurationManager::eventFilter(QObject *object, QEvent *event)
-{
-    // Restore and save geometry of widgets passed to registerWindowGeometry().
-    if ( event->type() == QEvent::Move || event->type() == QEvent::Resize ) {
-        QWidget *window = qobject_cast<QWidget*>(object);
-        saveWindowGeometry(window);
-    }
-
-    return false;
-}
-
-QByteArray ConfigurationManager::mainWindowState(const QString &mainWindowObjectName)
-{
-    const QString optionName = "Options/" + mainWindowObjectName + "_state";
-    return geometryOptionValue(optionName);
-}
-
-void ConfigurationManager::saveMainWindowState(const QString &mainWindowObjectName, const QByteArray &state)
-{
-    const QString optionName = "Options/" + mainWindowObjectName + "_state";
-    QSettings geometrySettings( getConfigurationFilePath("_geometry.ini"), QSettings::IniFormat );
-    geometrySettings.setValue(optionName, state);
-}
-
-QString ConfigurationManager::defaultTabName() const
-{
-    const QString tab = value("clipboard_tab").toString();
-    return tab.isEmpty() ? defaultClipboardTabName() : tab;
-}
-
-QStringList ConfigurationManager::tabs() const
-{
-    return value("tabs").toStringList();
-}
-
-void ConfigurationManager::initTabComboBox(QComboBox *comboBox) const
-{
-    initTabComboBox(comboBox, tabs());
 }
 
 void ConfigurationManager::initTabIcons()
@@ -366,29 +124,25 @@ void ConfigurationManager::initTabIcons()
     if ( !tw->tabIcon(0).isNull() )
         return;
 
-    IconFactory *f = iconFactory();
-
-    tw->setTabIcon( tw->indexOf(ui->tabGeneral), f->getIcon("", IconWrench) );
-    tw->setTabIcon( tw->indexOf(ui->tabHistory), f->getIcon("", IconListAlt) );
-    tw->setTabIcon( tw->indexOf(ui->tabItems), f->getIcon("", IconThList) );
-    tw->setTabIcon( tw->indexOf(ui->tabTray), f->getIcon("", IconInbox) );
-    tw->setTabIcon( tw->indexOf(ui->tabNotifications), f->getIcon("", IconInfoSign) );
-    tw->setTabIcon( tw->indexOf(ui->tabShortcuts), f->getIcon("", IconKeyboard) );
-    tw->setTabIcon( tw->indexOf(ui->tabAppearance), f->getIcon("", IconPicture) );
+    tw->setTabIcon( tw->indexOf(ui->tabGeneral), getIcon("", IconWrench) );
+    tw->setTabIcon( tw->indexOf(ui->tabLayout), getIcon("", IconColumns) );
+    tw->setTabIcon( tw->indexOf(ui->tabHistory), getIcon("", IconListAlt) );
+    tw->setTabIcon( tw->indexOf(ui->tabItems), getIcon("", IconThList) );
+    tw->setTabIcon( tw->indexOf(ui->tabTray), getIcon("", IconInbox) );
+    tw->setTabIcon( tw->indexOf(ui->tabNotifications), getIcon("", IconInfoSign) );
+    tw->setTabIcon( tw->indexOf(ui->tabShortcuts), getIcon("", IconKeyboard) );
+    tw->setTabIcon( tw->indexOf(ui->tabAppearance), getIcon("", IconPicture) );
 }
 
-void ConfigurationManager::initPluginWidgets()
+void ConfigurationManager::initPluginWidgets(ItemFactory *itemFactory)
 {
-    if (!itemFactory()->hasLoaders())
-        return;
-
     ui->itemOrderListPlugins->clearItems();
 
-    foreach ( const ItemLoaderInterfacePtr &loader, itemFactory()->loaders() ) {
+    foreach ( ItemLoaderInterface *loader, itemFactory->loaders() ) {
         ItemOrderList::ItemPtr pluginItem(new PluginItem(loader));
         const QIcon icon = getIcon(loader->icon());
         ui->itemOrderListPlugins->appendItem(
-                    loader->name(), itemFactory()->isLoaderEnabled(loader), false, icon, pluginItem );
+                    loader->name(), itemFactory->isLoaderEnabled(loader), false, icon, pluginItem );
     }
 }
 
@@ -405,9 +159,9 @@ void ConfigurationManager::initLanguages()
         foreach ( const QString &item, QDir(path).entryList(QStringList("copyq_*.qm")) ) {
             const int i = item.indexOf('_');
             const QString locale = item.mid(i + 1, item.lastIndexOf('.') - i - 1);
-            const QString language = QLocale(locale).nativeLanguageName();
+            const QString language = nativeLanguageName(locale);
 
-            if ( !languages.contains(language) ) {
+            if (!language.isEmpty()) {
                 languages.insert(language);
                 const int index = ui->comboBoxLanguage->count();
                 ui->comboBoxLanguage->addItem(language);
@@ -430,7 +184,7 @@ void ConfigurationManager::updateAutostart()
     PlatformPtr platform = createPlatformNativeInterface();
 
     if ( platform->canAutostart() ) {
-        bind("autostart", ui->checkBoxAutostart, platform->isAutostartEnabled());
+        bind<Config::autostart>(ui->checkBoxAutostart);
     } else {
         ui->checkBoxAutostart->hide();
     }
@@ -439,60 +193,61 @@ void ConfigurationManager::updateAutostart()
 void ConfigurationManager::setAutostartEnable()
 {
     PlatformPtr platform = createPlatformNativeInterface();
-    platform->setAutostartEnabled( value("autostart").toBool() );
+    platform->setAutostartEnabled( AppConfig().option<Config::autostart>() );
 }
 
 void ConfigurationManager::initOptions()
 {
     /* general options */
-    bind("autostart", ui->checkBoxAutostart, false);
-    bind("clipboard_tab", ui->comboBoxClipboardTab->lineEdit(), defaultClipboardTabName());
-    bind("maxitems", ui->spinBoxItems, 200);
-    bind("expire_tab", ui->spinBoxExpireTab, 0);
-    bind("editor", ui->lineEditEditor, DEFAULT_EDITOR);
-    bind("item_popup_interval", ui->spinBoxNotificationPopupInterval, 0);
-    bind("notification_position", ui->comboBoxNotificationPosition, 3);
-    bind("clipboard_notification_lines", ui->spinBoxClipboardNotificationLines, 0);
-    bind("notification_horizontal_offset", ui->spinBoxNotificationHorizontalOffset, 10);
-    bind("notification_vertical_offset", ui->spinBoxNotificationVerticalOffset, 10);
-    bind("notification_maximum_width", ui->spinBoxNotificationMaximumWidth, 300);
-    bind("notification_maximum_height", ui->spinBoxNotificationMaximumHeight, 100);
-    bind("edit_ctrl_return", ui->checkBoxEditCtrlReturn, true);
-    bind("move", ui->checkBoxMove, true);
-    bind("check_clipboard", ui->checkBoxClip, true);
-    bind("confirm_exit", ui->checkBoxConfirmExit, true);
-    bind("vi", ui->checkBoxViMode, false);
-    bind("save_filter_history", ui->checkBoxSaveFilterHistory, false);
-    bind("always_on_top", ui->checkBoxAlwaysOnTop, false);
-    bind("open_windows_on_current_screen", ui->checkBoxOpenWindowsOnCurrentScreen, true);
-    bind("transparency_focused", ui->spinBoxTransparencyFocused, 0);
-    bind("transparency", ui->spinBoxTransparencyUnfocused, 0);
-    bind("hide_tabs", ui->checkBoxHideTabs, false);
-    bind("hide_toolbar", ui->checkBoxHideToolbar, false);
-    bind("hide_toolbar_labels", ui->checkBoxHideToolbarLabels, true);
-    bind("disable_tray", ui->checkBoxDisableTray, false);
-    bind("tab_tree", ui->checkBoxTabTree, false);
-    bind("show_tab_item_count", ui->checkBoxShowTabItemCount, false);
-    bind("text_wrap", ui->checkBoxTextWrap, true);
+    bind<Config::autostart>(ui->checkBoxAutostart);
+    bind<Config::clipboard_tab>(ui->comboBoxClipboardTab->lineEdit());
+    bind<Config::maxitems>(ui->spinBoxItems);
+    bind<Config::expire_tab>(ui->spinBoxExpireTab);
+    bind<Config::editor>(ui->lineEditEditor);
+    bind<Config::item_popup_interval>(ui->spinBoxNotificationPopupInterval);
+    bind<Config::notification_position>(ui->comboBoxNotificationPosition);
+    bind<Config::clipboard_notification_lines>(ui->spinBoxClipboardNotificationLines);
+    bind<Config::notification_horizontal_offset>(ui->spinBoxNotificationHorizontalOffset);
+    bind<Config::notification_vertical_offset>(ui->spinBoxNotificationVerticalOffset);
+    bind<Config::notification_maximum_width>(ui->spinBoxNotificationMaximumWidth);
+    bind<Config::notification_maximum_height>(ui->spinBoxNotificationMaximumHeight);
+    bind<Config::edit_ctrl_return>(ui->checkBoxEditCtrlReturn);
+    bind<Config::move>(ui->checkBoxMove);
+    bind<Config::check_clipboard>(ui->checkBoxClip);
+    bind<Config::confirm_exit>(ui->checkBoxConfirmExit);
+    bind<Config::vi>(ui->checkBoxViMode);
+    bind<Config::save_filter_history>(ui->checkBoxSaveFilterHistory);
+    bind<Config::always_on_top>(ui->checkBoxAlwaysOnTop);
+    bind<Config::open_windows_on_current_screen>(ui->checkBoxOpenWindowsOnCurrentScreen);
+    bind<Config::transparency_focused>(ui->spinBoxTransparencyFocused);
+    bind<Config::transparency>(ui->spinBoxTransparencyUnfocused);
+    bind<Config::hide_tabs>(ui->checkBoxHideTabs);
+    bind<Config::hide_toolbar>(ui->checkBoxHideToolbar);
+    bind<Config::hide_toolbar_labels>(ui->checkBoxHideToolbarLabels);
+    bind<Config::disable_tray>(ui->checkBoxDisableTray);
+    bind<Config::hide_main_window>(ui->checkBoxHideWindow);
+    bind<Config::tab_tree>(ui->checkBoxTabTree);
+    bind<Config::show_tab_item_count>(ui->checkBoxShowTabItemCount);
+    bind<Config::text_wrap>(ui->checkBoxTextWrap);
 
-    bind("activate_closes", ui->checkBoxActivateCloses, true);
-    bind("activate_focuses", ui->checkBoxActivateFocuses, false);
-    bind("activate_pastes", ui->checkBoxActivatePastes, false);
+    bind<Config::activate_closes>(ui->checkBoxActivateCloses);
+    bind<Config::activate_focuses>(ui->checkBoxActivateFocuses);
+    bind<Config::activate_pastes>(ui->checkBoxActivatePastes);
 
-    bind("tray_items", ui->spinBoxTrayItems, 5);
-    bind("tray_item_paste", ui->checkBoxPasteMenuItem, true);
-    bind("tray_commands", ui->checkBoxTrayShowCommands, true);
-    bind("tray_tab_is_current", ui->checkBoxMenuTabIsCurrent, true);
-    bind("tray_images", ui->checkBoxTrayImages, true);
-    bind("tray_tab", ui->comboBoxMenuTab->lineEdit(), "");
+    bind<Config::tray_items>(ui->spinBoxTrayItems);
+    bind<Config::tray_item_paste>(ui->checkBoxPasteMenuItem);
+    bind<Config::tray_commands>(ui->checkBoxTrayShowCommands);
+    bind<Config::tray_tab_is_current>(ui->checkBoxMenuTabIsCurrent);
+    bind<Config::tray_images>(ui->checkBoxTrayImages);
+    bind<Config::tray_tab>(ui->comboBoxMenuTab->lineEdit());
 
     /* other options */
-    bind("command_history_size", 100);
+    bind<Config::command_history_size>();
 #ifdef COPYQ_WS_X11
     /* X11 clipboard selection monitoring and synchronization */
-    bind("check_selection", ui->checkBoxSel, false);
-    bind("copy_clipboard", ui->checkBoxCopyClip, false);
-    bind("copy_selection", ui->checkBoxCopySel, false);
+    bind<Config::check_selection>(ui->checkBoxSel);
+    bind<Config::copy_clipboard>(ui->checkBoxCopyClip);
+    bind<Config::copy_selection>(ui->checkBoxCopySel);
 #else
     ui->checkBoxCopySel->hide();
     ui->checkBoxSel->hide();
@@ -500,103 +255,87 @@ void ConfigurationManager::initOptions()
 #endif
 
     // values of last submitted action
-    bind("action_has_input", false);
-    bind("action_has_output", false);
-    bind("action_separator", "\\n");
-    bind("action_output_tab", "");
+    bind<Config::action_has_input>();
+    bind<Config::action_has_output>();
+    bind<Config::action_separator>();
+    bind<Config::action_output_tab>();
 }
 
-void ConfigurationManager::bind(const char *optionKey, QCheckBox *obj, bool defaultValue)
+template <typename Config, typename Widget>
+void ConfigurationManager::bind(Widget *obj)
+{
+    bind(Config::name(), obj, Config::defaultValue());
+}
+
+template <typename Config>
+void ConfigurationManager::bind()
+{
+    bind(Config::name(), QVariant::fromValue(Config::defaultValue()));
+}
+
+void ConfigurationManager::bind(const QString &optionKey, QCheckBox *obj, bool defaultValue)
 {
     m_options[optionKey] = Option(defaultValue, "checked", obj);
 }
 
-void ConfigurationManager::bind(const char *optionKey, QSpinBox *obj, int defaultValue)
+void ConfigurationManager::bind(const QString &optionKey, QSpinBox *obj, int defaultValue)
 {
     m_options[optionKey] = Option(defaultValue, "value", obj);
 }
 
-void ConfigurationManager::bind(const char *optionKey, QLineEdit *obj, const QString &defaultValue)
+void ConfigurationManager::bind(const QString &optionKey, QLineEdit *obj, const QString &defaultValue)
 {
     m_options[optionKey] = Option(defaultValue, "text", obj);
 }
 
-void ConfigurationManager::bind(const char *optionKey, QComboBox *obj, int defaultValue)
+void ConfigurationManager::bind(const QString &optionKey, QComboBox *obj, int defaultValue)
 {
     m_options[optionKey] = Option(defaultValue, "currentIndex", obj);
 }
 
-void ConfigurationManager::bind(const char *optionKey, const QVariant &defaultValue)
+void ConfigurationManager::bind(const QString &optionKey, const QVariant &defaultValue)
 {
     m_options[optionKey] = Option(defaultValue);
 }
 
-void ConfigurationManager::updateIcons()
-{
-    iconFactory()->setUseSystemIcons(
-                tabAppearance()->themeValue("use_system_icons").toBool() );
-}
-
-void ConfigurationManager::initTabComboBox(QComboBox *comboBox, const QStringList &tabs) const
-{
-    setComboBoxItems(comboBox, tabs);
-
-    for (int i = 1; i < comboBox->count(); ++i) {
-        const QString tabName = comboBox->itemText(i);
-        const QIcon icon = getIconForTabName(tabName);
-        comboBox->setItemIcon(i, icon);
-    }
-}
-
-void ConfigurationManager::updateTabComboBoxes(const QStringList &tabs)
-{
-    initTabComboBox(ui->comboBoxClipboardTab, tabs);
-    initTabComboBox(ui->comboBoxMenuTab, tabs);
-}
-
 void ConfigurationManager::updateTabComboBoxes()
 {
-    updateTabComboBoxes( tabs() );
-}
-
-QVariant ConfigurationManager::value(const QString &name) const
-{
-    if ( m_options.contains(name) )
-        return m_options[name].value();
-    return QSettings().value("Options/" + name);
-}
-
-void ConfigurationManager::setValue(const QString &name, const QVariant &value)
-{
-    const QString key = "Options/" + name;
-
-    if ( m_options.contains(name) ) {
-        if ( m_options[name].value() == value )
-            return;
-
-        m_options[name].setValue(value);
-
-        // Save the retrieved option value since option widget can modify it (e.g. int in range).
-        Settings().setValue( key, m_options[name].value() );
-
-        emit configurationChanged();
-    } else if ( QSettings().value(key) != value ) {
-        Settings().setValue(key, value);
-    }
+    initTabComboBox(ui->comboBoxClipboardTab);
+    initTabComboBox(ui->comboBoxMenuTab);
 }
 
 QStringList ConfigurationManager::options() const
 {
     QStringList options;
     foreach ( const QString &option, m_options.keys() ) {
-        if ( value(option).canConvert(QVariant::String) &&
-             !optionToolTip(option).isEmpty() )
+        if ( m_options[option].value().canConvert(QVariant::String)
+             && !optionToolTip(option).isEmpty() )
         {
             options.append(option);
         }
     }
 
     return options;
+}
+
+QString ConfigurationManager::optionValue(const QString &name) const
+{
+    return m_options.value(name).value().toString();
+}
+
+bool ConfigurationManager::setOptionValue(const QString &name, const QString &value)
+{
+    if ( !m_options.contains(name) )
+        return false;
+
+    const QString oldValue = optionValue(name);
+    m_options[name].setValue(value);
+    if ( optionValue(name) == oldValue )
+        return false;
+
+    AppConfig().setOption(name, m_options[name].value());
+    emit configurationChanged();
+    return true;
 }
 
 QString ConfigurationManager::optionToolTip(const QString &name) const
@@ -621,53 +360,20 @@ void ConfigurationManager::loadSettings()
     settings.endGroup();
 
     settings.beginGroup("Shortcuts");
-    tabShortcuts()->loadShortcuts(settings);
+    ui->configTabShortcuts->loadShortcuts(settings);
     settings.endGroup();
 
     settings.beginGroup("Theme");
-    tabAppearance()->loadTheme(settings);
+    ui->configTabAppearance->loadTheme(settings);
     settings.endGroup();
 
-    tabAppearance()->setEditor( value("editor").toString() );
-
-    // load settings for each plugin
-    settings.beginGroup("Plugins");
-    foreach ( const ItemLoaderInterfacePtr &loader, itemFactory()->loaders() ) {
-        settings.beginGroup(loader->id());
-
-        QVariantMap s;
-        foreach (const QString &name, settings.allKeys()) {
-            s[name] = settings.value(name);
-        }
-        loader->loadSettings(s);
-        itemFactory()->setLoaderEnabled( loader, settings.value("enabled", true).toBool() );
-
-        settings.endGroup();
-    }
-    settings.endGroup();
-
-    // load plugin priority
-    const QStringList pluginPriority =
-            settings.value("plugin_priority", QStringList()).toStringList();
-    itemFactory()->setPluginPriority(pluginPriority);
+    ui->configTabAppearance->setEditor( AppConfig().option<Config::editor>() );
 
     on_checkBoxMenuTabIsCurrent_stateChanged( ui->checkBoxMenuTabIsCurrent->checkState() );
 
-    if (m_tabIcons.isEmpty()) {
-        const int size = settings.beginReadArray("Tabs");
-        for(int i = 0; i < size; ++i) {
-            settings.setArrayIndex(i);
-            m_tabIcons.insert(settings.value("name").toString(),
-                              settings.value("icon").toString());
-        }
-        settings.endArray();
-    }
-
-    setTabs( tabs() );
+    updateTabComboBoxes();
 
     updateAutostart();
-
-    updateIcons();
 }
 
 void ConfigurationManager::on_buttonBox_clicked(QAbstractButton* button)
@@ -677,6 +383,7 @@ void ConfigurationManager::on_buttonBox_clicked(QAbstractButton* button)
     switch( ui->buttonBox->buttonRole(button) ) {
     case QDialogButtonBox::ApplyRole:
         apply();
+        emit configurationChanged();
         break;
     case QDialogButtonBox::AcceptRole:
         accept();
@@ -704,105 +411,14 @@ void ConfigurationManager::on_buttonBox_clicked(QAbstractButton* button)
     }
 }
 
-void ConfigurationManager::setTabs(const QStringList &tabs)
-{
-    Q_ASSERT( !tabs.contains(QString()) );
-    Q_ASSERT( tabs.toSet().size() == tabs.size() );
-
-    setValue("tabs", tabs);
-
-    updateTabComboBoxes(tabs);
-
-    foreach ( const QString &tabName, m_tabIcons.keys() ) {
-        const QRegExp re(QRegExp::escape(tabName) + "(?:|/.*)$");
-        if ( tabs.indexOf(re) == -1 )
-            m_tabIcons.remove(tabName);
-    }
-}
-
-QStringList ConfigurationManager::savedTabs() const
-{
-    QStringList tabs = this->tabs();
-    tabs.removeAll(QString());
-
-    const QString configPath = settingsDirectoryPath();
-
-    QStringList files = QDir(configPath).entryList(QStringList("*_tab_*.dat"));
-    files.append( QDir(configPath).entryList(QStringList("*_tab_*.dat.tmp")) );
-
-    QRegExp re("_tab_([^.]*)");
-
-    foreach (const QString fileName, files) {
-        if ( fileName.contains(re) ) {
-            const QString tabName =
-                    QString::fromUtf8(QByteArray::fromBase64(re.cap(1).toUtf8()));
-            if ( !tabName.isEmpty() && !tabs.contains(tabName) )
-                tabs.append(tabName);
-        }
-    }
-
-    return tabs;
-}
-
-ConfigTabAppearance *ConfigurationManager::tabAppearance() const
-{
-    return ui->configTabAppearance;
-}
-
-ConfigTabShortcuts *ConfigurationManager::tabShortcuts() const
-{
-    return ui->configTabShortcuts;
-}
-
-QString ConfigurationManager::getIconNameForTabName(const QString &tabName) const
-{
-    return m_tabIcons.value(tabName);
-}
-
-void ConfigurationManager::setIconNameForTabName(const QString &name, const QString &icon)
-{
-    m_tabIcons[name] = icon;
-
-    Settings settings;
-    settings.beginWriteArray("Tabs");
-    int i = 0;
-
-    foreach ( const QString &tabName, m_tabIcons.keys() ) {
-        settings.setArrayIndex(i++);
-        settings.setValue("name", tabName);
-        settings.setValue("icon", m_tabIcons[tabName]);
-    }
-
-    settings.endArray();
-
-    updateTabComboBoxes();
-}
-
-QIcon ConfigurationManager::getIconForTabName(const QString &tabName) const
-{
-    const QString fileName = getIconNameForTabName(tabName);
-    return fileName.isEmpty() ? QIcon() : iconFactory()->iconFromFile(fileName);
-}
-
 void ConfigurationManager::setVisible(bool visible)
 {
     QDialog::setVisible(visible);
 
     if (visible) {
         initTabIcons();
-        initPluginWidgets();
         initLanguages();
-        m_optionWidgetsLoaded = true;
     }
-}
-
-ConfigurationManager *ConfigurationManager::createInstance(QWidget *parent)
-{
-    Q_ASSERT(m_Instance == NULL);
-    m_Instance = new ConfigurationManager(parent);
-    m_Instance->loadSettings();
-    m_Instance->registerWindowGeometry(m_Instance);
-    return m_Instance;
 }
 
 void ConfigurationManager::apply()
@@ -817,39 +433,48 @@ void ConfigurationManager::apply()
 
     // Save configuration without command line alternatives only if option widgets are initialized
     // (i.e. clicked OK or Apply in configuration dialog).
-    if (m_optionWidgetsLoaded) {
-        settings.beginGroup("Shortcuts");
-        tabShortcuts()->saveShortcuts(settings);
-        settings.endGroup();
+    settings.beginGroup("Shortcuts");
+    ui->configTabShortcuts->saveShortcuts(*settings.settingsData());
+    settings.endGroup();
 
-        settings.beginGroup("Theme");
-        tabAppearance()->saveTheme(settings);
-        settings.endGroup();
+    settings.beginGroup("Theme");
+    ui->configTabAppearance->saveTheme(*settings.settingsData());
+    settings.endGroup();
 
-        // save settings for each plugin
-        if ( itemFactory()->hasLoaders() ) {
-            settings.beginGroup("Plugins");
-            for (int i = 0; i < ui->itemOrderListPlugins->itemCount(); ++i) {
-                bool isPluginEnabled = ui->itemOrderListPlugins->isItemChecked(i);
-                QWidget *w = ui->itemOrderListPlugins->widget(i);
-                if (w) {
-                    PluginWidget *pluginWidget = qobject_cast<PluginWidget *>(w);
-                    pluginWidget->applySettings(&settings, isPluginEnabled);
-                    itemFactory()->setLoaderEnabled(pluginWidget->loader(), isPluginEnabled);
-                }
-            }
-            settings.endGroup();
+    // Save settings for each plugin.
+    settings.beginGroup("Plugins");
 
-            // save plugin priority
-            QStringList pluginPriority;
-            for (int i = 0; i <  ui->itemOrderListPlugins->itemCount(); ++i)
-                pluginPriority.append( ui->itemOrderListPlugins->itemLabel(i) );
-            settings.setValue("plugin_priority", pluginPriority);
-            itemFactory()->setPluginPriority(pluginPriority);
+    QStringList pluginPriority;
+
+    for (int i = 0; i < ui->itemOrderListPlugins->itemCount(); ++i) {
+        const QString loaderId = ui->itemOrderListPlugins->data(i).toString();
+        Q_ASSERT(!loaderId.isEmpty());
+
+        pluginPriority.append(loaderId);
+
+        settings.beginGroup(loaderId);
+
+        QWidget *w = ui->itemOrderListPlugins->widget(i);
+        if (w) {
+            PluginWidget *pluginWidget = qobject_cast<PluginWidget *>(w);
+            ItemLoaderInterface *loader = pluginWidget->loader();
+            const QVariantMap s = loader->applySettings();
+            foreach (const QString &name, s.keys())
+                settings.setValue(name, s[name]);
         }
+
+        const bool isPluginEnabled = ui->itemOrderListPlugins->isItemChecked(i);
+        settings.setValue("enabled", isPluginEnabled);
+
+        settings.endGroup();
     }
 
-    tabAppearance()->setEditor( value("editor").toString() );
+    settings.endGroup();
+
+    if (!pluginPriority.isEmpty())
+        settings.setValue("plugin_priority", pluginPriority);
+
+    ui->configTabAppearance->setEditor( AppConfig().option<Config::editor>() );
 
     setAutostartEnable();
 
@@ -862,29 +487,16 @@ void ConfigurationManager::apply()
         QMessageBox::information( this, tr("Restart Required"),
                                   tr("Language will be changed after application is restarted.") );
     }
-
-    emit configurationChanged();
-
-    updateIcons();
 }
 
 void ConfigurationManager::done(int result)
 {
     if (result == QDialog::Accepted) {
         apply();
-    } else {
-        loadSettings();
+        emit configurationChanged();
     }
 
     QDialog::done(result);
-
-    if (!isVisible()) {
-        m_optionWidgetsLoaded = false;
-        if ( itemFactory()->hasLoaders() )
-            ui->itemOrderListPlugins->clearItems();
-
-        ui->comboBoxLanguage->clear();
-    }
 }
 
 void ConfigurationManager::on_checkBoxMenuTabIsCurrent_stateChanged(int state)
@@ -895,72 +507,4 @@ void ConfigurationManager::on_checkBoxMenuTabIsCurrent_stateChanged(int state)
 void ConfigurationManager::on_spinBoxTrayItems_valueChanged(int value)
 {
     ui->checkBoxPasteMenuItem->setEnabled(value > 0);
-}
-
-void ConfigurationManager::restoreWindowGeometryOnTimer()
-{
-    QObject *timer = sender();
-    Q_ASSERT(timer);
-
-    QWidget *window = qobject_cast<QWidget*>(timer->parent());
-    Q_ASSERT(window);
-
-    bool openOnCurrentScreen = value("open_windows_on_current_screen").toBool();
-    ::restoreWindowGeometry(window, openOnCurrentScreen);
-
-    window->setProperty("CopyQ_ignore_geometry_changes", false);
-}
-
-QIcon getIconFromResources(const QString &iconName)
-{
-    Q_ASSERT( !iconName.isEmpty() );
-    return ConfigurationManager::instance()->iconFactory()->getIconFromResources(iconName);
-}
-
-QIcon getIcon(const QString &themeName, ushort iconId)
-{
-    return ConfigurationManager::instance()->iconFactory()->getIcon(themeName, iconId);
-}
-
-QIcon getIcon(const QVariant &iconOrIconId)
-{
-    if (iconOrIconId.canConvert(QVariant::UInt))
-        return getIcon( QString(), iconOrIconId.value<ushort>() );
-
-    if (iconOrIconId.canConvert(QVariant::Icon))
-        return iconOrIconId.value<QIcon>();
-
-    return QIcon();
-}
-
-void setDefaultTabItemCounterStyle(QWidget *widget)
-{
-    QFont font = widget->font();
-    const qreal pointSize = font.pointSizeF();
-    if (pointSize > 0.0)
-        font.setPointSizeF(pointSize * 0.7);
-    else
-        font.setPixelSize(font.pixelSize() * 0.7);
-    widget->setFont(font);
-
-    QPalette pal = widget->palette();
-    const QPalette::ColorRole role = widget->foregroundRole();
-    QColor color = pal.color(role);
-    color.setAlpha( qMax(50, color.alpha() - 100) );
-    color.setRed( qMin(255, color.red() + 120) );
-    pal.setColor(role, color);
-    widget->setPalette(pal);
-}
-
-void setComboBoxItems(QComboBox *comboBox, const QStringList &items)
-{
-    const QString text = comboBox->currentText();
-    comboBox->clear();
-    comboBox->addItem(QString());
-    comboBox->addItems(items);
-    comboBox->setEditText(text);
-
-    const int currentIndex = comboBox->findText(text);
-    if (currentIndex != -1)
-        comboBox->setCurrentIndex(currentIndex);
 }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -27,10 +27,8 @@
 #include "common/settings.h"
 #include "gui/addcommanddialog.h"
 #include "gui/commandwidget.h"
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
-#include "item/itemfactory.h"
 #include "platform/platformnativeinterface.h"
 
 #include <QFileDialog>
@@ -49,9 +47,10 @@ const QIcon iconPasteCommands() { return getIcon("edit-paste", IconPaste); }
 
 class CommandItem : public ItemOrderList::Item {
 public:
-    CommandItem(const Command &command, CommandDialog *cmdDialog)
+    CommandItem(const Command &command, const QStringList &formats, CommandDialog *cmdDialog)
         : m_command(command)
         , m_cmdDialog(cmdDialog)
+        , m_formats(formats)
     {
     }
 
@@ -61,6 +60,7 @@ private:
     QWidget *createWidget(QWidget *parent) const
     {
         CommandWidget *cmdWidget = new CommandWidget(parent);
+        cmdWidget->setFormats(m_formats);
         cmdWidget->setCommand(m_command);
 
         QObject::connect( cmdWidget, SIGNAL(iconChanged(QString)),
@@ -75,6 +75,7 @@ private:
 
     Command m_command;
     CommandDialog *m_cmdDialog;
+    QStringList m_formats;
 };
 
 void loadCommand(const QSettings &settings, bool onlyEnabled, CommandDialog::Commands *commands)
@@ -215,7 +216,7 @@ void saveCommands(const CommandDialog::Commands &commands, QSettings *settings)
 
 QIcon getCommandIcon(const QString &iconString)
 {
-    return ConfigurationManager::instance()->iconFactory()->iconFromFile(iconString);
+    return iconFromFile(iconString);
 }
 
 QString commandsToPaste()
@@ -234,9 +235,12 @@ QString commandsToPaste()
 
 Q_DECLARE_METATYPE(Command)
 
-CommandDialog::CommandDialog(QWidget *parent)
+CommandDialog::CommandDialog(
+        const Commands &pluginCommands, const QStringList &formats, QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::CommandDialog)
+    , m_pluginCommands(pluginCommands)
+    , m_formats(formats)
 {
     ui->setupUi(this);
     ui->pushButtonLoadCommands->setIcon(iconLoadCommands());
@@ -293,7 +297,7 @@ CommandDialog::Commands CommandDialog::commands(bool onlyEnabled, bool onlySaved
                 Q_ASSERT(commandWidget);
                 c = commandWidget->command();
             } else {
-                c = ui->itemOrderListCommands->item(i)->data().value<Command>();
+                c = ui->itemOrderListCommands->data(i).value<Command>();
             }
 
             c.enable = ui->itemOrderListCommands->isItemChecked(i);
@@ -397,7 +401,7 @@ void CommandDialog::onFinished(int result)
 
 void CommandDialog::on_itemOrderListCommands_addButtonClicked()
 {
-    AddCommandDialog *addCommandDialog = new AddCommandDialog(this);
+    AddCommandDialog *addCommandDialog = new AddCommandDialog(m_pluginCommands, this);
     addCommandDialog->setAttribute(Qt::WA_DeleteOnClose, true);
     connect(addCommandDialog, SIGNAL(addCommands(QList<Command>)), SLOT(onAddCommands(QList<Command>)));
     addCommandDialog->show();
@@ -448,8 +452,7 @@ void CommandDialog::on_pushButtonPasteCommands_clicked()
 void CommandDialog::on_lineEditFilterCommands_textChanged(const QString &text)
 {
     for (int i = 0; i < ui->itemOrderListCommands->itemCount(); ++i) {
-        ItemOrderList::ItemPtr item = ui->itemOrderListCommands->item(i);
-        const Command c = item->data().value<Command>();
+        const Command c = ui->itemOrderListCommands->data(i).value<Command>();
         bool show = text.isEmpty() || QString(c.name).remove('&').contains(text, Qt::CaseInsensitive)
                 || c.cmd.contains(text, Qt::CaseInsensitive);
         ui->itemOrderListCommands->setItemWidgetVisible(i, show);
@@ -487,7 +490,7 @@ void CommandDialog::onClipboardChanged()
 
 void CommandDialog::addCommandWithoutSave(const Command &command, int targetRow)
 {
-    ItemOrderList::ItemPtr item(new CommandItem(command, this));
+    ItemOrderList::ItemPtr item(new CommandItem(command, m_formats, this));
     ui->itemOrderListCommands->insertItem(
                 command.name, command.enable, command.automatic,
                 getCommandIcon(command.icon), item, targetRow);
@@ -547,7 +550,7 @@ QString CommandDialog::serializeSelectedCommands()
     commandsSettings.sync();
 
     // Replace ugly '\n' with indented lines.
-    const QString data = QString::fromUtf8(readTemporaryFileContent(tmpfile));
+    const QString data = getTextData(readTemporaryFileContent(tmpfile));
     QString commandData;
     commandData.reserve(data.size());
     QRegExp re("^(\\d+\\\\)?Command=\"");
@@ -600,5 +603,5 @@ CommandDialog::Commands loadCommands(bool onlyEnabled)
 void saveCommands(const CommandDialog::Commands &commands)
 {
     Settings settings;
-    saveCommands(commands, &settings);
+    saveCommands(commands, settings.settingsData());
 }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -43,6 +43,9 @@ public:
 
     /** Set current command. */
     void setCommand(const Command &command);
+
+    /** Set formats for format selection combo boxes. */
+    void setFormats(const QStringList &formats);
 
 signals:
     void iconChanged(const QString &iconString);

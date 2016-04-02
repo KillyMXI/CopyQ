@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -33,7 +33,9 @@ class ClientSocket;
 class ScriptableWorker : public QRunnable
 {
 public:
-    ScriptableWorker(MainWindow *mainWindow, const Arguments &args, ClientSocket *socket);
+    ScriptableWorker(
+            MainWindow *mainWindow, const Arguments &args, ClientSocket *socket,
+            const QString &pluginScript);
 
     void run();
 

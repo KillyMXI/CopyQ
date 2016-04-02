@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,7 +22,6 @@
 
 #include "common/common.h"
 #include "common/version.h"
-#include "configurationmanager.h"
 
 namespace {
 
@@ -86,8 +85,6 @@ AboutDialog::AboutDialog(QWidget *parent)
 {
     ui->setupUi(this);
     ui->textBrowser->setText( aboutPage() );
-
-    ConfigurationManager::instance()->registerWindowGeometry(this);
 }
 
 AboutDialog::~AboutDialog()
@@ -139,14 +136,14 @@ QString AboutDialog::aboutPage()
             + helpLink( tr("Author"), QString::fromUtf8("Lukáš Holeček") )
             + helpLink( tr("E-mail"), helpMail("hluk@email.cz") )
             + helpLink( tr("Web"), helpUrl("https://hluk.github.io/CopyQ/") )
-            + helpLink( tr("Wiki"), helpUrl("https://sourceforge.net/p/copyq/wiki/Home/") )
+            + helpLink( tr("Wiki"), helpUrl("https://github.com/hluk/CopyQ/wiki") )
             + helpLink( tr("Donate"), helpUrl("https://www.bountysource.com/teams/copyq") )
             +
         "</table>"
         "</p>"
 
         // copyright
-        "<p class='info'>Copyright (c) 2009 - 2015</p>"
+        "<p class='info'>Copyright (c) 2009 - 2016</p>"
 
         "<p></p>"
 
@@ -170,7 +167,7 @@ QString AboutDialog::aboutPage()
             + helpDeveloper("Ryan Wooden", "rygwdn@gmail.com")
             + helpDeveloper("Scott Kostyshak", "skostysh@princeton.edu")
             + helpDeveloper("Sebastian Schuberth", "sschuberth@gmail.com")
-            + helpDeveloper("Tomas Nilzon", "tomas@tonil.eu")
+            + helpDeveloper("Tomas Nilzon", "tomas.nilzon@telia.com")
             + helpDeveloper("Wilfried Caruel", "wilfried.caruel@gmail.com")
             + helpDeveloper("x2357", "x2357handle@gmail.com")
             +

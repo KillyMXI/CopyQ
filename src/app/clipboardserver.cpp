@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,6 +20,7 @@
 #include "clipboardserver.h"
 
 #include "app/remoteprocess.h"
+#include "common/appconfig.h"
 #include "common/arguments.h"
 #include "common/clientsocket.h"
 #include "common/client_server.h"
@@ -29,7 +30,6 @@
 #include "gui/clipboardbrowser.h"
 #include "gui/commanddialog.h"
 #include "gui/configtabshortcuts.h"
-#include "gui/configurationmanager.h"
 #include "gui/iconfactory.h"
 #include "gui/mainwindow.h"
 #include "item/itemfactory.h"
@@ -110,29 +110,33 @@ ClipboardServer::ClipboardServer(int &argc, char **argv, const QString &sessionN
     , m_clientThreads()
     , m_ignoreKeysTimer()
 {
-    Server *server = new Server( clipboardServerName(), this );
-    bool serverStarted = server->isListening();
-    restoreSettings(serverStarted);
+    const QString serverName = clipboardServerName();
+    Server *server = new Server(serverName, this);
 
-    if (!serverStarted) {
+    if ( server->isListening() ) {
+        ::createSessionMutex();
+        restoreSettings(true);
+        COPYQ_LOG("Server \"" + serverName + "\" started.");
+    } else {
+        restoreSettings(false);
+        COPYQ_LOG("Server \"" + serverName + "\" already running!");
         log( tr("CopyQ server is already running."), LogWarning );
         exit(0);
         return;
     }
-
-    createSessionMutex();
 
     QApplication::setQuitOnLastWindowClosed(false);
 
     if (areIconsTooSmall())
         QApplication::setStyle(new ApplicationStyle);
 
-    m_wnd = new MainWindow;
+    m_itemFactory = new ItemFactory(this);
+    m_wnd = new MainWindow(m_itemFactory);
 
     connect( server, SIGNAL(newConnection(Arguments,ClientSocket*)),
              this, SLOT(doCommand(Arguments,ClientSocket*)) );
 
-    connect( QCoreApplication::instance(), SIGNAL(aboutToQuit()),
+    connect( qApp, SIGNAL(aboutToQuit()),
              this, SLOT(onAboutToQuit()));
 
     connect( qApp, SIGNAL(commitDataRequest(QSessionManager&)),
@@ -147,7 +151,7 @@ ClipboardServer::ClipboardServer(int &argc, char **argv, const QString &sessionN
     loadSettings();
 
     // notify window if configuration changes
-    connect( ConfigurationManager::instance(), SIGNAL(configurationChanged()),
+    connect( m_wnd, SIGNAL(configurationChanged()),
              this, SLOT(loadSettings()) );
 
 #ifndef NO_GLOBAL_SHORTCUTS
@@ -162,12 +166,13 @@ ClipboardServer::ClipboardServer(int &argc, char **argv, const QString &sessionN
     // run clipboard monitor
     startMonitoring();
 
-    QCoreApplication::instance()->installEventFilter(this);
+    qApp->installEventFilter(this);
 
     server->start();
 
     // Ignore global shortcut key presses in any widget.
-    initSingleShotTimer( &m_ignoreKeysTimer, 0, this, SLOT(onIgnoreKeysTimeout()) );
+    m_ignoreKeysTimer.setInterval(100);
+    m_ignoreKeysTimer.setSingleShot(true);
 }
 
 ClipboardServer::~ClipboardServer()
@@ -217,12 +222,10 @@ void ClipboardServer::loadMonitorSettings()
 
     COPYQ_LOG("Configuring monitor.");
 
-    ConfigurationManager *cm = ConfigurationManager::instance();
-
     QVariantMap settings;
-    settings["formats"] = cm->itemFactory()->formatsToSave();
+    settings["formats"] = m_itemFactory->formatsToSave();
 #ifdef COPYQ_WS_X11
-    settings["check_selection"] = cm->value("check_selection");
+    settings["check_selection"] = AppConfig().option<Config::check_selection>();
 #endif
 
     QByteArray settingsData;
@@ -277,15 +280,15 @@ void ClipboardServer::onAboutToQuit()
 
 void ClipboardServer::onCommitData(QSessionManager &sessionManager)
 {
-    bool cancel = sessionManager.allowsInteraction() && !askToQuit();
+    COPYQ_LOG("Got commit data request from session manager.");
+
+    const bool cancel = sessionManager.allowsInteraction() && !askToQuit();
     sessionManager.release();
 
-    if (cancel) {
+    if (cancel)
         sessionManager.cancel();
-    } else {
+    else
         m_wnd->saveTabs();
-        m_wnd->setExitAfterClosed();
-    }
 }
 
 void ClipboardServer::maybeQuit()
@@ -294,11 +297,6 @@ void ClipboardServer::maybeQuit()
         terminateThreads();
         QCoreApplication::exit();
     }
-}
-
-void ClipboardServer::onIgnoreKeysTimeout()
-{
-    m_wnd->setEnabled(true);
 }
 
 bool ClipboardServer::askToQuit()
@@ -337,7 +335,7 @@ void ClipboardServer::doCommand(const Arguments &args, ClientSocket *client)
     // There is no parent so as it's possible to move the worker to another thread.
     // QThreadPool takes ownership and worker will be automatically deleted
     // after run() (see QRunnable::setAutoDelete()).
-    ScriptableWorker *worker = new ScriptableWorker(m_wnd, args, client);
+    ScriptableWorker *worker = new ScriptableWorker(m_wnd, args, client, m_itemFactory->scripts());
 
     // Terminate worker at application exit.
     connect( this, SIGNAL(terminateClientThreads()),
@@ -349,7 +347,7 @@ void ClipboardServer::doCommand(const Arguments &args, ClientSocket *client)
 
 void ClipboardServer::newMonitorMessage(const QByteArray &message)
 {
-    if ( m_wnd->isClipboardStoringDisabled() )
+    if ( !m_wnd->isMonitoringEnabled() )
         return;
 
     QVariantMap data;
@@ -390,15 +388,17 @@ void ClipboardServer::createGlobalShortcut(const QKeySequence &shortcut, const C
     Q_UNUSED(command);
 #else
     QxtGlobalShortcut *s = new QxtGlobalShortcut(shortcut, this);
+    if (!s->isValid()) {
+        log(QString("Failed to set global shortcut \"%1\" for command \"%2\".")
+            .arg(shortcut.toString())
+            .arg(command.name),
+            LogWarning);
+        delete s;
+        return;
+    }
+
     connect( s, SIGNAL(activated(QxtGlobalShortcut*)),
              this, SLOT(shortcutActivated(QxtGlobalShortcut*)) );
-
-    // Create special dummy QAction so that it blocks global shortcuts in active windows.
-    QAction *act = new QAction(s);
-    act->setShortcut(shortcut);
-    act->setShortcutContext(Qt::WidgetWithChildrenShortcut);
-    act->setPriority(QAction::HighPriority);
-    m_wnd->addAction(act);
 
     m_shortcutActions[s] = command;
 #endif
@@ -406,8 +406,19 @@ void ClipboardServer::createGlobalShortcut(const QKeySequence &shortcut, const C
 
 bool ClipboardServer::eventFilter(QObject *object, QEvent *ev)
 {
+    const QEvent::Type type = ev->type();
+
+    if ( m_ignoreKeysTimer.isActive()
+         && (type == QEvent::KeyPress
+             || type == QEvent::Shortcut
+             || type == QEvent::ShortcutOverride) )
+    {
+        ev->accept();
+        return true;
+    }
+
     // Close menu on Escape key and give focus back to search edit or browser.
-    if (ev->type() == QEvent::KeyPress) {
+    if (type == QEvent::KeyPress) {
         QKeyEvent *keyevent = static_cast<QKeyEvent *>(ev);
         if (keyevent->key() == Qt::Key_Escape) {
             QMenu *menu = qobject_cast<QMenu*>(object);
@@ -416,8 +427,8 @@ bool ClipboardServer::eventFilter(QObject *object, QEvent *ev)
                 m_wnd->enterBrowseMode(m_wnd->browseMode());
             }
         }
-    } else if (ev->type() == QEvent::Paint) {
-        ConfigurationManager::instance()->iconFactory()->setActivePaintDevice(object);
+    } else if (type == QEvent::Paint) {
+        setActivePaintDevice(object);
     }
 
     return false;
@@ -433,7 +444,13 @@ void ClipboardServer::loadSettings()
 void ClipboardServer::shortcutActivated(QxtGlobalShortcut *shortcut)
 {
     m_ignoreKeysTimer.start();
-    m_wnd->setEnabled(false);
-    if ( m_shortcutActions.contains(shortcut) )
-        m_wnd->action(QVariantMap(), m_shortcutActions[shortcut]);
+
+    const QMap<QxtGlobalShortcut*, Command>::const_iterator it =
+            m_shortcutActions.find(shortcut);
+    if ( it != m_shortcutActions.end() ) {
+        QVariantMap data;
+        const QString shortcutText = portableShortcutText(shortcut->shortcut());
+        data.insert(mimeShortcut, shortcutText.toUtf8());
+        m_wnd->action(data, it.value());
+    }
 }

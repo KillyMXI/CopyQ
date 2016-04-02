@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -65,8 +65,8 @@ public slots:
     void action(Action *action);
 
 signals:
-    /** Emitted when last action finishes or first action starts. */
-    void hasRunningActionChanged();
+    /** Emitted new action starts or ends. */
+    void runningActionsCountChanged();
 
 private slots:
     /** Called after action was started (creates menu item to kill it). */
@@ -89,7 +89,6 @@ private:
     ProcessManagerDialog *m_activeActionDialog;
     QString m_currentTabName;
     Command m_lastActionDialogCommand;
-    bool m_hasRunningAction;
 };
 
 #endif // ACTIONHANDLER_H

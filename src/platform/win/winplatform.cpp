@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -33,7 +33,18 @@
 
 #include <qt_windows.h>
 
+#include <stdio.h>
+#include <fcntl.h>
+#include <io.h>
+
 namespace {
+
+void setBinaryStdin()
+{
+    const int result = _setmode( _fileno( stdin ), _O_BINARY );
+    if (result == -1)
+        log("Failed to set binary stdin.", LogError);
+}
 
 void migrateDirectory(const QString oldPath, const QString newPath)
 {
@@ -54,6 +65,12 @@ void migrateDirectory(const QString oldPath, const QString newPath)
     }
 }
 
+void migrateConfig(const QSettings &oldSettings, Settings &newSettings)
+{
+    foreach ( const QString &key, oldSettings.allKeys() )
+        newSettings.setValue(key, oldSettings.value(key));
+}
+
 void migrateConfigToAppDir()
 {
     const QString path = QCoreApplication::applicationDirPath() + "/config";
@@ -71,7 +88,7 @@ void migrateConfigToAppDir()
         QSettings::setDefaultFormat(QSettings::IniFormat);
         Settings newSettings;
 
-        if ( Settings::canModifySettings() && Settings::isEmpty(newSettings) ) {
+        if ( Settings::canModifySettings() && newSettings.isEmpty() ) {
             COPYQ_LOG("Migrating configuration to application directory.");
             const QString newConfigPath = QDir::cleanPath(newSettings.fileName() + "/..");
 
@@ -82,13 +99,71 @@ void migrateConfigToAppDir()
             migrateDirectory(oldConfigPath + "/themes", newConfigPath + "/themes");
 
             // Migrate rest of the configuration from the system registry.
-            foreach ( const QString &key, oldSettings.allKeys() )
-                newSettings.setValue(key, oldSettings.value(key));
+            migrateConfig(oldSettings, newSettings);
         }
     } else {
         COPYQ_LOG( QString("Cannot use \"%1\" directory to save user configuration and items.")
                    .arg(path) );
+
+        QSettings oldSettings;
+
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        Settings newSettings;
+
+        // Move settings from Windows registry.
+        if (newSettings.isEmpty()) {
+            COPYQ_LOG("Moving configuration from Windows registry.");
+            migrateConfig(oldSettings, newSettings);
+        }
     }
+}
+
+BOOL ctrlHandler(DWORD fdwCtrlType)
+{
+    switch (fdwCtrlType) {
+    case CTRL_C_EVENT:
+        COPYQ_LOG("Terminating application on signal.");
+        QCoreApplication::exit();
+        return TRUE;
+
+    case CTRL_CLOSE_EVENT:
+        COPYQ_LOG("Terminating application on close event.");
+        QCoreApplication::exit();
+        return TRUE;
+
+    case CTRL_BREAK_EVENT:
+        COPYQ_LOG("Terminating application on break event.");
+        QCoreApplication::exit();
+        return TRUE;
+
+    case CTRL_LOGOFF_EVENT:
+        COPYQ_LOG("Terminating application on log off.");
+        QCoreApplication::exit();
+        return TRUE;
+
+    case CTRL_SHUTDOWN_EVENT:
+        COPYQ_LOG("Terminating application on shut down.");
+        QCoreApplication::exit();
+        return TRUE;
+
+    default:
+        return FALSE;
+    }
+}
+
+void installControlHandler()
+{
+    if ( !SetConsoleCtrlHandler(reinterpret_cast<PHANDLER_ROUTINE>(ctrlHandler), TRUE) )
+        log("Failed to set Windows control handler.", LogError);
+}
+
+template <typename Application>
+Application *createApplication(int &argc, char **argv)
+{
+    Application *app = new Application(argc, argv);
+    installControlHandler();
+    setBinaryStdin();
+    return app;
 }
 
 } // namespace
@@ -112,17 +187,17 @@ PlatformWindowPtr WinPlatform::getCurrentWindow()
 
 QApplication *WinPlatform::createServerApplication(int &argc, char **argv)
 {
-    return new QApplication(argc, argv);
+    return createApplication<QApplication>(argc, argv);
 }
 
 QApplication *WinPlatform::createMonitorApplication(int &argc, char **argv)
 {
-    return new QApplication(argc, argv);
+    return createApplication<QApplication>(argc, argv);
 }
 
 QCoreApplication *WinPlatform::createClientApplication(int &argc, char **argv)
 {
-    return new QCoreApplication(argc, argv);
+    return createApplication<QCoreApplication>(argc, argv);
 }
 
 void WinPlatform::loadSettings()
@@ -137,15 +212,26 @@ PlatformClipboardPtr WinPlatform::clipboard()
 
 int WinPlatform::keyCode(const QKeyEvent &event)
 {
+    const int key = PlatformNativeInterface::keyCode(event);
+
+    // Some keys shouldn't be translated.
+    if ( key == Qt::Key_Return
+      || key == Qt::Key_Enter
+      || key == Qt::Key_Escape
+      || key == Qt::Key_Tab
+      || key == Qt::Key_Backtab
+      || key == Qt::Key_Backspace
+         )
+    {
+        return key;
+    }
+
     const quint32 vk = event.nativeVirtualKey();
+    const UINT result = MapVirtualKeyW(vk, MAPVK_VK_TO_CHAR);
+    if (result != 0)
+        return result;
 
-    if (vk >= '0' && vk <= '9')
-        return Qt::Key_0 + vk - '0';
-
-    if (vk >= 'A' && vk <= 'Z')
-        return Qt::Key_A + vk - 'A';
-
-    return PlatformNativeInterface::keyCode(event);
+    return key;
 }
 
 QStringList WinPlatform::getCommandLineArguments(int, char**)

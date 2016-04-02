@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,6 +22,7 @@
 
 #include <QDialog>
 #include <QModelIndex>
+#include <QPersistentModelIndex>
 #include <QRegExp>
 #include <QVariantMap>
 
@@ -95,7 +96,7 @@ private:
 
     Ui::ActionDialog *ui;
     QVariantMap m_data;
-    QModelIndex m_index;
+    QPersistentModelIndex m_index;
     QStringList m_capturedTexts;
 
     int m_currentCommandIndex;

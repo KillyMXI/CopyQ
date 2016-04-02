@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2015, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -188,12 +188,12 @@ ItemWidget *ItemLoaderInterface::create(const QModelIndex &, QWidget *) const
     return NULL;
 }
 
-bool ItemLoaderInterface::canLoadItems(QFile *)
+bool ItemLoaderInterface::canLoadItems(QFile *) const
 {
     return false;
 }
 
-bool ItemLoaderInterface::canSaveItems(const QAbstractItemModel &)
+bool ItemLoaderInterface::canSaveItems(const QAbstractItemModel &) const
 {
     return false;
 }
