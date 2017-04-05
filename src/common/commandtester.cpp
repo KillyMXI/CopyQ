@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,15 +20,15 @@
 #include "commandtester.h"
 
 #include "common/action.h"
-#include "common/common.h"
 #include "common/mimetypes.h"
+#include "common/textdata.h"
 
 #include <QProcess>
 #include <QCoreApplication>
 
 CommandTester::CommandTester(QObject *parent)
     : QObject(parent)
-    , m_action(NULL)
+    , m_action(nullptr)
     , m_abort(false)
     , m_restart(false)
 {
@@ -60,7 +60,7 @@ bool CommandTester::hasCommands() const
     return !m_commands.isEmpty();
 }
 
-const QVariantMap &CommandTester::data() const
+QVariantMap CommandTester::data() const
 {
     return m_data;
 }
@@ -88,7 +88,7 @@ void CommandTester::actionFinished()
 
     bool passed = !m_action->actionFailed() && m_action->exitCode() == 0;
     m_action->deleteLater();
-    m_action = NULL;
+    m_action = nullptr;
 
     if (!m_abort)
         commandPassed(passed);
@@ -123,12 +123,14 @@ void CommandTester::startNext()
         const QString text = getTextData(m_data);
         m_action->setInput(text.toUtf8());
         m_action->setData(m_data);
+        m_action->setIgnoreExitCode(true);
 
         const QString arg = getTextData(m_action->input());
         m_action->setCommand(command->matchCmd, QStringList(arg));
 
         connect(m_action, SIGNAL(actionFinished(Action*)), SLOT(actionFinished()));
-        m_action->start();
+
+        emit requestActionStart(m_action);
     }
 }
 

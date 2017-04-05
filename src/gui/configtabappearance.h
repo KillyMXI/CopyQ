@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -29,7 +29,6 @@ namespace Ui {
 class ConfigTabAppearance;
 }
 
-class ClipboardBrowser;
 class ItemDelegate;
 class ItemFactory;
 class Option;
@@ -41,20 +40,20 @@ class ConfigTabAppearance : public QWidget
     Q_OBJECT
 
 public:
-    explicit ConfigTabAppearance(QWidget *parent = NULL);
+    explicit ConfigTabAppearance(QWidget *parent = nullptr);
     ~ConfigTabAppearance();
 
     /** Load theme from settings file. */
-    void loadTheme(QSettings &settings);
+    void loadTheme(const QSettings &settings);
     /** Save theme to settings file. */
-    void saveTheme(QSettings &settings);
+    void saveTheme(QSettings *settings);
 
     void setEditor(const QString &editor) { m_editor = editor; }
 
     void createPreview(ItemFactory *itemFactory);
 
 protected:
-    void showEvent(QShowEvent *event);
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void onFontButtonClicked();
@@ -75,6 +74,7 @@ private slots:
 
 private:
     void updateThemes();
+    void addThemes(const QString &path);
     void updateStyle();
 
     void fontButtonClicked(QObject *button);
@@ -92,7 +92,8 @@ private:
     Theme m_theme;
     QString m_editor;
 
-    ClipboardBrowser *m_preview;
+    QWidget *m_preview = nullptr;
+    ItemFactory *m_itemFactory = nullptr;
 };
 
 #endif // CONFIGTABAPPEARANCE_H

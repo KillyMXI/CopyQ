@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,6 +24,9 @@
 #include "client.h"
 
 #include "platform/platformnativeinterface.h"
+#include "platform/platformclipboard.h"
+
+#include <QVariantMap>
 
 /**
  * Monitors clipboard and sends new clipboard data to server.
@@ -39,14 +42,16 @@ class ClipboardMonitor : public Client, public App
     Q_OBJECT
 
 public:
-    ClipboardMonitor(int &argc, char **argv);
+    ClipboardMonitor(int &argc, char **argv, const QString &serverName, const QString &sessionName);
 
 private slots:
     void onClipboardChanged(PlatformClipboard::Mode mode);
 
-    void onMessageReceived(const QByteArray &message, int messageCode);
+    void onMessageReceived(const QByteArray &message, int messageCode) override;
 
-    void onDisconnected();
+    void onDisconnected() override;
+
+    void onConnectionFailed() override;
 
 private:
     PlatformClipboardPtr m_clipboard;

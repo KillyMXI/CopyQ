@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,6 +19,8 @@
 
 #ifndef NOTIFICATIONDAEMON_H
 #define NOTIFICATIONDAEMON_H
+
+#include "gui/notificationbutton.h"
 
 #include <QColor>
 #include <QList>
@@ -46,20 +48,27 @@ public:
         TopLeft = Top | Left
     };
 
-    explicit NotificationDaemon(QObject *parent = NULL);
+    explicit NotificationDaemon(QObject *parent = nullptr);
 
-    /** Create new notification or update one with same @a id (if non-negative). */
-    void create(
-            const QString &title, const QString &msg, ushort icon,
-            int msec, bool clickToShow, int id = -1);
+    /** Create new notification or update one with same @a id (if non-empty). */
+    void create(const QString &title,
+            const QString &msg,
+            const QString &icon,
+            int msec,
+            const QString &id,
+            const NotificationButtons &buttons);
 
-    /** Create new notification or update one with same @a id (if non-negative). */
+    /** Create new notification or update one with same @a id (if non-empty). */
     void create(
-            const QVariantMap &data, int maxLines, ushort icon,
-            int msec, bool clickToShow, int id = -1);
+            const QVariantMap &data,
+            int maxLines,
+            const QString &icon,
+            int msec,
+            const QString &id,
+            const NotificationButtons &buttons);
 
     /** Update interval to show notification with given @a id. */
-    void updateInterval(int id, int msec);
+    void updateInterval(const QString &id, int msec);
 
     void setPosition(Position position);
 
@@ -73,21 +82,24 @@ public:
 
     void setNotificationStyleSheet(const QString &styleSheet);
 
-    void removeNotification(int id);
+    void removeNotification(const QString &id);
+
+signals:
+    void notificationButtonClicked(const NotificationButton &button);
 
 private slots:
     void onNotificationClose(Notification *notification);
     void doUpdateNotifications();
 
 private:
-    Notification *findNotification(int id);
+    Notification *findNotification(const QString &id);
 
-    Notification *createNotification(int id = -1);
+    Notification *createNotification(
+            const QString &id, const QString &title, const NotificationButtons &buttons);
 
     int offsetX() const;
     int offsetY() const;
 
-    int m_lastId;
     Position m_position;
     QList<Notification*> m_notifications;
     qreal m_opacity;

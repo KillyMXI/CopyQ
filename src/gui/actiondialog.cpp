@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,14 +23,16 @@
 #include "common/appconfig.h"
 #include "common/action.h"
 #include "common/command.h"
-#include "common/common.h"
 #include "common/config.h"
 #include "common/mimetypes.h"
+#include "common/textdata.h"
 #include "item/serialize.h"
 #include "gui/windowgeometryguard.h"
 
 #include <QFile>
 #include <QMessageBox>
+
+#include <memory>
 
 namespace {
 
@@ -60,23 +62,12 @@ QString commandToLabel(const QString &command)
     return label;
 }
 
-int findCommand(const QComboBox &comboBox, const QVariant &itemData)
-{
-    for (int i = 0; i < comboBox.count(); ++i) {
-        if (comboBox.itemData(i) == itemData)
-            return i;
-    }
-
-    return -1;
-}
-
 } // namespace
 
 ActionDialog::ActionDialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::ActionDialog)
     , m_data()
-    , m_index()
     , m_capturedTexts()
     , m_currentCommandIndex(-1)
 {
@@ -108,7 +99,7 @@ void ActionDialog::setInputData(const QVariantMap &data)
 void ActionDialog::restoreHistory()
 {
     const int maxCount = AppConfig().option<Config::command_history_size>();
-    ui->comboBoxCommands->setMaxCount(maxCount);
+    ui->comboBoxCommands->setMaxCount(maxCount + 1);
 
     QFile file( dataFilename() );
     file.open(QIODevice::ReadOnly);
@@ -117,17 +108,11 @@ void ActionDialog::restoreHistory()
 
     ui->comboBoxCommands->clear();
     ui->comboBoxCommands->addItem(QString());
-    while( !in.atEnd() ) {
+    while( !in.atEnd() && ui->comboBoxCommands->count() <= maxCount ) {
         in >> v;
-        if (v.canConvert(QVariant::String)) {
-            // backwards compatibility with versions up to 1.8.2
-            QVariantMap values;
-            values["cmd"] = v;
-            ui->comboBoxCommands->addItem(commandToLabel(v.toString()), values);
-        } else {
-            QVariantMap values = v.value<QVariantMap>();
-            ui->comboBoxCommands->addItem(commandToLabel(values["cmd"].toString()), v);
-        }
+        const QVariantMap values = v.value<QVariantMap>();
+        const QString cmd = values.value("cmd").toString();
+        ui->comboBoxCommands->addItem( commandToLabel(cmd), v );
     }
     ui->comboBoxCommands->setCurrentIndex(0);
 }
@@ -144,9 +129,8 @@ void ActionDialog::saveHistory()
     QDataStream out(&file);
 
     for (int i = 1; i < ui->comboBoxCommands->count(); ++i) {
-        QVariant itemData = ui->comboBoxCommands->itemData(i);
-        if ( !itemData.toMap().value("cmd").toString().isEmpty() )
-            out << itemData;
+        const QVariant itemData = ui->comboBoxCommands->itemData(i);
+        out << itemData;
     }
 }
 
@@ -166,7 +150,7 @@ void ActionDialog::createAction()
         m_capturedTexts.append(QString());
     m_capturedTexts[0] = getTextData(m_data);
 
-    QScopedPointer<Action> act( new Action() );
+    std::unique_ptr<Action> act( new Action() );
     act->setCommand(cmd, m_capturedTexts);
     if (input.isEmpty() && !inputFormat.isEmpty())
         act->setInput(m_data, inputFormat);
@@ -175,12 +159,9 @@ void ActionDialog::createAction()
     act->setOutputFormat(ui->comboBoxOutputFormat->currentText());
     act->setItemSeparator(QRegExp(ui->separatorEdit->text()));
     act->setOutputTab(ui->comboBoxOutputTab->currentText());
-    act->setIndex(m_index);
     act->setName(m_actionName);
     act->setData(m_data);
-    emit accepted(act.take());
-
-    close();
+    emit accepted(act.release());
 }
 
 void ActionDialog::setCommand(const Command &cmd)
@@ -213,11 +194,6 @@ void ActionDialog::setOutputTabs(const QStringList &tabs,
     w->setEditText(currentTabName);
 }
 
-void ActionDialog::setOutputIndex(const QModelIndex &index)
-{
-    m_index = index;
-}
-
 void ActionDialog::loadSettings()
 {
     initFormatComboBox(ui->comboBoxInputFormat);
@@ -239,21 +215,6 @@ Command ActionDialog::command() const
     return cmd;
 }
 
-void ActionDialog::accept()
-{
-    QVariant itemData = createCurrentItemData();
-    int i = findCommand(*ui->comboBoxCommands, itemData);
-    if (i != -1)
-        ui->comboBoxCommands->removeItem(i);
-
-    const QString text = ui->commandEdit->command();
-    ui->comboBoxCommands->insertItem(1, commandToLabel(text), itemData);
-
-    saveHistory();
-
-    QDialog::accept();
-}
-
 void ActionDialog::done(int r)
 {
     emit closed(this);
@@ -266,18 +227,27 @@ void ActionDialog::on_buttonBox_clicked(QAbstractButton* button)
     switch ( ui->buttonBox->standardButton(button) ) {
     case QDialogButtonBox::Ok:
         createAction();
+        saveCurrentCommandToHistory();
+        close();
         break;
-    case QDialogButtonBox::Save:
 
+    case QDialogButtonBox::Apply:
+        createAction();
+        saveCurrentCommandToHistory();
+        break;
+
+    case QDialogButtonBox::Save:
         emit saveCommand(command());
         QMessageBox::information(
                     this, tr("Command saved"),
                     tr("Command was saved and can be accessed from item menu.\n"
                        "You can set up the command in preferences.") );
         break;
+
     case QDialogButtonBox::Cancel:
         close();
         break;
+
     default:
         break;
     }
@@ -362,4 +332,26 @@ QVariant ActionDialog::createCurrentItemData()
     values["outputTab"] = ui->comboBoxOutputTab->currentText();
 
     return values;
+}
+
+void ActionDialog::saveCurrentCommandToHistory()
+{
+    const QString cmd = ui->commandEdit->command();
+    if (cmd.isEmpty())
+        return;
+
+    const QVariant itemData = createCurrentItemData();
+    ui->comboBoxCommands->setCurrentIndex(0);
+
+    for (int i = ui->comboBoxCommands->count() - 1; i >= 1; --i) {
+        const QVariant itemData2 = ui->comboBoxCommands->itemData(i);
+        const QString cmd2 = itemData2.toMap().value("cmd").toString();
+        if (cmd == cmd2)
+            ui->comboBoxCommands->removeItem(i);
+    }
+
+    ui->comboBoxCommands->insertItem(1, commandToLabel(cmd), itemData);
+    ui->comboBoxCommands->setCurrentIndex(1);
+
+    saveHistory();
 }

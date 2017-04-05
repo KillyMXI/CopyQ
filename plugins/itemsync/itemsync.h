@@ -23,15 +23,17 @@
 #include "gui/icons.h"
 #include "item/itemwidget.h"
 
-#include <QScopedPointer>
 #include <QWidget>
+
+#include <memory>
 
 namespace Ui {
 class ItemSyncSettings;
 }
 
-class FileWatcher;
 class QTextEdit;
+
+class FileWatcher;
 struct FileFormat;
 
 class ItemSync : public QWidget, public ItemWidget
@@ -39,31 +41,61 @@ class ItemSync : public QWidget, public ItemWidget
     Q_OBJECT
 
 public:
-    ItemSync(const QString &label, const QString &icon, ItemWidget *childItem = NULL);
+    ItemSync(const QString &label, const QString &icon, ItemWidget *childItem = nullptr);
 
 protected:
-    virtual void highlight(const QRegExp &re, const QFont &highlightFont,
-                           const QPalette &highlightPalette);
+    void highlight(const QRegExp &re, const QFont &highlightFont,
+                           const QPalette &highlightPalette) override;
 
-    virtual QWidget *createEditor(QWidget *parent) const;
+    QWidget *createEditor(QWidget *parent) const override;
 
-    virtual void setEditorData(QWidget *editor, const QModelIndex &index) const;
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override;
 
-    virtual void setModelData(QWidget *editor, QAbstractItemModel *model,
-                              const QModelIndex &index) const;
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                              const QModelIndex &index) const override;
 
-    virtual bool hasChanges(QWidget *editor) const;
+    bool hasChanges(QWidget *editor) const override;
 
-    virtual QObject *createExternalEditor(const QModelIndex &index, QWidget *parent) const;
+    QObject *createExternalEditor(const QModelIndex &index, QWidget *parent) const override;
 
-    virtual void updateSize(const QSize &maximumSize, int idealWidth);
+    void updateSize(const QSize &maximumSize, int idealWidth) override;
 
-    virtual bool eventFilter(QObject *, QEvent *event);
+    bool eventFilter(QObject *, QEvent *event) override;
 
 private:
     QTextEdit *m_label;
     QWidget *m_icon;
-    QScopedPointer<ItemWidget> m_childItem;
+    std::unique_ptr<ItemWidget> m_childItem;
+};
+
+class ItemSyncSaver : public QObject, public ItemSaverInterface
+{
+    Q_OBJECT
+
+public:
+    explicit ItemSyncSaver(const QString &tabPath);
+
+    ItemSyncSaver(
+            QAbstractItemModel *model,
+            const QString &tabPath,
+            const QString &path,
+            const QStringList &files,
+            int maxItems,
+            const QList<FileFormat> &formatSettings);
+
+    bool saveItems(const QString &tabName, const QAbstractItemModel &model, QIODevice *file) override;
+
+    bool canRemoveItems(const QList<QModelIndex> &indexList, QString *error) override;
+
+    bool canMoveItems(const QList<QModelIndex> &indexList) override;
+
+    void itemsRemovedByUser(const QList<QModelIndex> &indexList) override;
+
+    QVariantMap copyItem(const QAbstractItemModel &model, const QVariantMap &itemData) override;
+
+private:
+    QString m_tabPath;
+    FileWatcher *m_watcher;
 };
 
 /**
@@ -96,62 +128,45 @@ public:
     ItemSyncLoader();
     ~ItemSyncLoader();
 
-    virtual QString id() const { return "itemsync"; }
-    virtual QString name() const { return tr("Synchronize"); }
-    virtual QString author() const { return QString(); }
-    virtual QString description() const { return tr("Synchronize items and notes with a directory on disk."); }
-    virtual QVariant icon() const { return QVariant(IconUploadAlt); }
+    QString id() const override { return "itemsync"; }
+    QString name() const override { return tr("Synchronize"); }
+    QString author() const override { return QString(); }
+    QString description() const override { return tr("Synchronize items and notes with a directory on disk."); }
+    QVariant icon() const override { return QVariant(IconUploadAlt); }
 
-    virtual QVariantMap applySettings();
+    QVariantMap applySettings() override;
 
-    virtual void loadSettings(const QVariantMap &settings);
+    void loadSettings(const QVariantMap &settings) override;
 
-    virtual QWidget *createSettingsWidget(QWidget *parent);
+    QWidget *createSettingsWidget(QWidget *parent) override;
 
-    virtual bool canLoadItems(QFile *file) const;
+    bool canLoadItems(QIODevice *file) const override;
 
-    virtual bool canSaveItems(const QAbstractItemModel &model) const;
+    bool canSaveItems(const QString &tabName) const override;
 
-    virtual bool loadItems(QAbstractItemModel *model, QFile *file);
+    ItemSaverPtr loadItems(const QString &tabName, QAbstractItemModel *model, QIODevice *file, int maxItems) override;
 
-    virtual bool saveItems(const QAbstractItemModel &model, QFile *file);
+    ItemSaverPtr initializeTab(const QString &tabName, QAbstractItemModel *model, int maxItems) override;
 
-    virtual bool initializeTab(QAbstractItemModel *model);
+    ItemWidget *transform(ItemWidget *itemWidget, const QModelIndex &index) override;
 
-    virtual void uninitializeTab(QAbstractItemModel *model);
+    bool matches(const QModelIndex &index, const QRegExp &re) const override;
 
-    virtual ItemWidget *transform(ItemWidget *itemWidget, const QModelIndex &index);
+    QObject *tests(const TestInterfacePtr &test) const override;
 
-    virtual bool canRemoveItems(const QList<QModelIndex> &indexList);
-
-    virtual bool canMoveItems(const QList<QModelIndex> &indexList);
-
-    virtual void itemsRemovedByUser(const QList<QModelIndex> &indexList);
-
-    virtual QVariantMap copyItem(const QAbstractItemModel &model, const QVariantMap &itemData);
-
-    virtual bool matches(const QModelIndex &index, const QRegExp &re) const;
-
-    virtual QObject *tests(const TestInterfacePtr &test) const;
-
-    virtual const QObject *signaler() const { return this; }
+    const QObject *signaler() const override { return this; }
 
 signals:
     void error(const QString &);
 
 private slots:
-    void removeWatcher(QObject *watcher);
-    void removeModel();
     void onBrowseButtonClicked();
 
 private:
-    QString tabPath(const QAbstractItemModel &model) const;
+    ItemSaverPtr loadItems(const QString &tabName, QAbstractItemModel *model, const QStringList &files, int maxItems);
 
-    bool loadItems(QAbstractItemModel *model, const QStringList &files);
-
-    QScopedPointer<Ui::ItemSyncSettings> ui;
+    std::unique_ptr<Ui::ItemSyncSettings> ui;
     QVariantMap m_settings;
-    QMap<const QObject*, FileWatcher*> m_watchers;
     QMap<QString, QString> m_tabPaths;
     QList<FileFormat> m_formatSettings;
 };

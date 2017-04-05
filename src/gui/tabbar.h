@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,6 +20,8 @@
 #ifndef TABBAR_H
 #define TABBAR_H
 
+#include "gui/tabswidgetinterface.h"
+
 #include <QTabBar>
 
 class QMimeData;
@@ -27,31 +29,52 @@ class QModelIndex;
 class QMouseEvent;
 class QPoint;
 
-class TabBar : public QTabBar
+class TabBar : public QTabBar, public TabsWidgetInterface
 {
     Q_OBJECT
 
 public:
-    explicit TabBar(QWidget *parent = NULL);
+    explicit TabBar(QWidget *parent = nullptr);
 
-    void updateTabIcon(const QString &tabName);
+    QString getCurrentTabPath() const override;
 
-    void updateTabIcons();
+    bool isTabGroup(const QString &) const override { return false; }
 
-    void setTabItemCount(const QString &tabName, const QString &itemCount);
+    QString tabText(int tabIndex) const override;
+    void setTabText(int tabIndex, const QString &tabText) override;
+
+    void setTabItemCount(const QString &tabName, const QString &itemCount) override;
+
+    void updateTabIcon(const QString &tabName) override;
+
+    void insertTab(int index, const QString &text) override;
+    void removeTab(int index) override;
+    void moveTab(int from, int to) override;
+
+    void updateCollapsedTabs(QStringList *) const override {}
+    void setCollapsedTabs(const QStringList &) override {}
+
+    void updateTabIcons() override;
+
+    void nextTab() override;
+    void previousTab() override;
+
+    void setCurrentTab(int index) override;
+
+    virtual void adjustSize() override;
 
 signals:
     void tabMenuRequested(const QPoint &pos, int tab);
     void tabRenamed(const QString &newName, int index);
-    void dropItems(const QString &tabName, QDropEvent *event);
+    void dropItems(const QString &tabName, const QMimeData *data);
 
 protected:
-    void contextMenuEvent(QContextMenuEvent *event);
-    void mousePressEvent(QMouseEvent *event);
-    void dragEnterEvent(QDragEnterEvent *event);
-    void dragMoveEvent(QDragMoveEvent *event);
-    void dropEvent(QDropEvent *event);
-    void tabInserted(int index);
+    void contextMenuEvent(QContextMenuEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+    void tabInserted(int index) override;
 
 private slots:
     void onCurrentChanged();

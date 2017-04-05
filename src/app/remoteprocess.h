@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,11 +23,16 @@
 #include <QObject>
 #include <QTimer>
 
-class Arguments;
+#include <memory>
+
 class ClientSocket;
 class Server;
 class QByteArray;
+class QProcess;
 class QString;
+
+using ClientSocketPtr = std::shared_ptr<ClientSocket>;
+using ServerPtr = std::unique_ptr<Server>;
 
 /**
  * Starts process and handles communication with it.
@@ -36,7 +41,7 @@ class RemoteProcess : public QObject
 {
     Q_OBJECT
 public:
-    explicit RemoteProcess(QObject *parent = NULL);
+    explicit RemoteProcess(QObject *parent = nullptr);
 
     ~RemoteProcess();
 
@@ -69,7 +74,7 @@ signals:
     /**
      * An error occurred with connection.
      */
-    void connectionError();
+    void connectionError(const QString &error);
 
     /**
      * Successfully connected to the remote process.
@@ -79,14 +84,21 @@ signals:
 private slots:
     void ping();
     void pongTimeout();
-    void onNewConnection(const Arguments &args, ClientSocket *socket);
+    void onNewConnection(const ClientSocketPtr &socket);
     void onMessageReceived(const QByteArray &message, int messageCode);
     bool checkConnection();
-    void onConnectionError();
+    void onConnectionError(const QString &error);
+    void onDisconnected();
 
 private:
+    void terminate();
+
+    ServerPtr m_server;
+    QProcess *m_process;
+    ClientSocketPtr m_socket;
     QTimer m_timerPing;
     QTimer m_timerPongTimeout;
+    int m_pongRetryCount;
     enum State {
         Unconnected,
         Connecting,

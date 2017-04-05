@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -34,7 +34,7 @@ class FileClass : public ScriptableClass<QFile, FilePrototype>
 {
     Q_OBJECT
 public:
-    FileClass(const QString &currentPath, QScriptEngine *engine);
+    explicit FileClass(QScriptEngine *engine);
 
     QScriptValue newInstance(const QString &path);
     QScriptValue newInstance();
@@ -42,10 +42,10 @@ public:
     const QString &getCurrentPath() const;
     void setCurrentPath(const QString &path);
 
-    QString name() const { return "File"; }
+    QString name() const override { return "File"; }
 
 private:
-    QScriptValue createInstance(const QScriptContext &context);
+    QScriptValue createInstance(const QScriptContext &context) override;
 
     QString m_currentPath;
 };

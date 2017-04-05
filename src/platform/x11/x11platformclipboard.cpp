@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,11 +21,11 @@
 
 #include "x11platformclipboard.h"
 
-#include "x11displayguard.h"
-
 #include "common/common.h"
 #include "common/mimetypes.h"
 #include "common/log.h"
+
+#include "x11displayguard.h"
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -36,7 +36,7 @@ namespace {
 bool isSelectionIncomplete(Display *display)
 {
     // If mouse button or shift is pressed then assume that user is selecting text.
-    XEvent event;
+    XEvent event{};
     XQueryPointer(display, DefaultRootWindow(display),
                   &event.xbutton.root, &event.xbutton.window,
                   &event.xbutton.x_root, &event.xbutton.y_root,
@@ -60,13 +60,11 @@ bool isSelectionEmpty(Display *display)
 
 } // namespace
 
-X11PlatformClipboard::X11PlatformClipboard(const QSharedPointer<X11DisplayGuard> &d)
+X11PlatformClipboard::X11PlatformClipboard(const std::shared_ptr<X11DisplayGuard> &d)
     : d(d)
     , m_resetClipboard(false)
     , m_resetSelection(false)
 {
-    Q_ASSERT(d->display());
-
     initSingleShotTimer( &m_timerIncompleteSelection, 100, this, SLOT(checkSelectionComplete()) );
     initSingleShotTimer( &m_timerReset, 500, this, SLOT(resetClipboard()) );
 }
@@ -95,7 +93,12 @@ void X11PlatformClipboard::onChanged(QClipboard::Mode mode)
     if ( mode == QClipboard::Selection && waitIfSelectionIncomplete() )
         return;
 
-    QVariantMap data = DummyClipboard::data(isClip ? Clipboard : Selection, m_formats);
+    // Always assume that only plain text can be in primary selection buffer.
+    // Asking a app for bigger data when mouse selection changes can make the app hang for a moment.
+    QVariantMap data =
+            DummyClipboard::data(
+                isClip ? Clipboard : Selection,
+                isClip ? m_formats : QStringList(mimeText));
     bool foreignData = !ownsClipboardData(data);
 
     if ( foreignData && maybeResetClipboard(mode) )
@@ -129,6 +132,9 @@ void X11PlatformClipboard::resetClipboard()
 
 bool X11PlatformClipboard::waitIfSelectionIncomplete()
 {
+    if (!d->display())
+        return true;
+
     if ( m_timerIncompleteSelection.isActive() || isSelectionIncomplete(d->display()) ) {
         m_timerIncompleteSelection.start();
         return true;
@@ -139,6 +145,9 @@ bool X11PlatformClipboard::waitIfSelectionIncomplete()
 
 bool X11PlatformClipboard::maybeResetClipboard(QClipboard::Mode mode)
 {
+    if (!d->display())
+        return false;
+
     bool isClip = (mode == QClipboard::Clipboard);
     bool isEmpty = isClip
             ? isClipboardEmpty(d->display())

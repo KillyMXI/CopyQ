@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -28,14 +28,14 @@ class IconWidget : public QWidget
 {
     Q_OBJECT
 public:
-    explicit IconWidget(int icon, QWidget *parent = NULL);
+    explicit IconWidget(int icon, QWidget *parent = nullptr);
 
-    explicit IconWidget(const QString &icon, QWidget *parent = NULL);
+    explicit IconWidget(const QString &icon, QWidget *parent = nullptr);
 
-    virtual QSize sizeHint() const;
+    QSize sizeHint() const override;
 
 protected:
-    virtual void paintEvent(QPaintEvent *event);
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     QString m_icon;

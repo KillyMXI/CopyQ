@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,16 +24,16 @@
 #include <QFontDatabase>
 #include <QStyle>
 
-const QFont &iconFont()
+QFont iconFont()
 {
     static bool init = true;
-    static QFont font;
     if (init) {
         init = false;
         QFontDatabase::addApplicationFont(":/images/fontawesome-webfont.ttf");
-        font.setFamily("FontAwesome");
-        font.setPixelSize( iconFontSizePixels() );
     }
+
+    QFont font("FontAwesome");
+    font.setPixelSize( iconFontSizePixels() );
     return font;
 }
 

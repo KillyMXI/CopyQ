@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -35,11 +35,11 @@ public:
      * Create option with a default value.
      * Current value is taken from object's property.
      */
-    Option(
+    explicit Option(
             const QVariant &default_value, //!< Default value.
-            const char *property_name = NULL,
+            const char *property_name = nullptr,
             //!< Property name of @obj with value for option.
-            QObject *obj = NULL
+            QObject *obj = nullptr
             );
 
     /** Return current value. */

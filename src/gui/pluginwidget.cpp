@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,7 +22,7 @@
 
 #include "item/itemwidget.h"
 
-PluginWidget::PluginWidget(ItemLoaderInterface *loader, QWidget *parent)
+PluginWidget::PluginWidget(const ItemLoaderPtr &loader, QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::PluginWidget)
     , m_loader(loader)

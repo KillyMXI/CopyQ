@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,8 +20,8 @@
 #include "shortcutdialog.h"
 #include "ui_shortcutdialog.h"
 
-#include "common/common.h"
 #include "common/log.h"
+#include "common/shortcuts.h"
 #include "gui/icons.h"
 #include "platform/platformnativeinterface.h"
 
@@ -56,7 +56,6 @@ ShortcutDialog::ShortcutDialog(QWidget *parent)
     , ui(new Ui::ShortcutDialog)
     , m_shortcut()
     , m_metaPressed(false)
-    , m_expectModifier(false)
 {
     ui->setupUi(this);
 
@@ -100,9 +99,6 @@ bool ShortcutDialog::eventFilter(QObject *object, QEvent *event)
                 reject();
                 return true;
             }
-
-            if (m_expectModifier)
-                return true;
         }
 
         event->accept();
@@ -115,7 +111,9 @@ bool ShortcutDialog::eventFilter(QObject *object, QEvent *event)
         }
 
         return false;
-    } else if (event->type() == QEvent::KeyRelease) {
+    }
+
+    if (event->type() == QEvent::KeyRelease) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
         COPYQ_LOG(QString("Shortcut key release: %1").arg(keyEvent->key()));
 

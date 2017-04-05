@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -33,7 +33,7 @@ class DirClass : public ScriptableClass<DirWrapper, DirPrototype>
 {
     Q_OBJECT
 public:
-    DirClass(const QString &currentPath, QScriptEngine *engine);
+    explicit DirClass(QScriptEngine *engine);
 
     QScriptValue newInstance(const QDir &dir);
     QScriptValue newInstance(const QString &path);
@@ -42,10 +42,10 @@ public:
     const QString &getCurrentPath() const;
     void setCurrentPath(const QString &path);
 
-    QString name() const { return "Dir"; }
+    QString name() const override { return "Dir"; }
 
 private:
-    QScriptValue createInstance(const QScriptContext &context);
+    QScriptValue createInstance(const QScriptContext &context) override;
 
     QString m_currentPath;
 };

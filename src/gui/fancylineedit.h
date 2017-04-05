@@ -44,16 +44,16 @@ class IconButton : public QAbstractButton
 {
     Q_OBJECT
 public:
-    explicit IconButton(QWidget *parent = 0);
-    void paintEvent(QPaintEvent *event);
+    explicit IconButton(QWidget *parent = nullptr);
+    void paintEvent(QPaintEvent *event) override;
     void setIcon(const QIcon &icon) { m_icon = icon; update(); }
     void setHasMenu(bool hasMenu) { m_hasMenu = hasMenu; update(); }
 
-    QSize sizeHint() const;
+    QSize sizeHint() const override;
 
 protected:
-    void keyPressEvent(QKeyEvent *ke);
-    void keyReleaseEvent(QKeyEvent *ke);
+    void keyPressEvent(QKeyEvent *ke) override;
+    void keyReleaseEvent(QKeyEvent *ke) override;
 
 private:
     QIcon m_icon;
@@ -68,13 +68,13 @@ class FancyLineEdit : public QLineEdit
 public:
     enum Side {Left = 0, Right = 1};
 
-    explicit FancyLineEdit(QWidget *parent = 0);
+    explicit FancyLineEdit(QWidget *parent = nullptr);
     ~FancyLineEdit();
 
     void setButtonIcon(Side side, const QIcon &icon);
 
     QMenu *buttonMenu(Side side) const;
-    void setButtonMenu(Side side, QMenu *menu);
+    void setButtonMenu(Side side, QMenu *buttonMenu);
 
     void setButtonVisible(Side side, bool visible);
     bool isButtonVisible(Side side) const;
@@ -96,7 +96,7 @@ private slots:
     void iconClicked();
 
 protected:
-    void resizeEvent(QResizeEvent *e);
+    void resizeEvent(QResizeEvent *e) override;
 
 private:
     void updateMargins();

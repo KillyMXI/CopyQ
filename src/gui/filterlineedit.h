@@ -40,7 +40,7 @@ class FilterLineEdit : public FancyLineEdit
 {
     Q_OBJECT
 public:
-    explicit FilterLineEdit(QWidget *parent = NULL);
+    explicit FilterLineEdit(QWidget *parent = nullptr);
 
     QRegExp filter() const;
 
@@ -50,11 +50,15 @@ signals:
     void filterChanged(const QRegExp &);
 
 protected:
-    void hideEvent(QHideEvent *event);
+    void hideEvent(QHideEvent *event) override;
+    void focusInEvent(QFocusEvent *event) override;
+    void focusOutEvent(QFocusEvent *event) override;
 
 private slots:
     void onTextChanged();
     void onMenuAction();
+
+    void emitTextChanged();
 
 private:
     QTimer *m_timerSearch;

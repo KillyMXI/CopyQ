@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,7 +23,7 @@
 
 #include <QCoreApplication>
 
-#include <signal.h>
+#include <csignal>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -31,22 +31,22 @@ int UnixSignalHandler::signalFd[UnixSignalHandler::Count];
 
 bool UnixSignalHandler::create(QObject *parent)
 {
-    static UnixSignalHandler *handler = NULL;
+    static UnixSignalHandler *handler = nullptr;
 
     if (handler)
         return true;
 
     // Safely quit application on TERM and HUP signals.
-    struct sigaction sigact;
+    struct sigaction sigact{};
 
     sigact.sa_handler = UnixSignalHandler::exitSignalHandler;
     sigemptyset(&sigact.sa_mask);
     sigact.sa_flags = 0;
     sigact.sa_flags |= SA_RESTART;
 
-    if ( sigaction(SIGHUP, &sigact, 0) > 0
-         || sigaction(SIGINT, &sigact, 0) > 0
-         || sigaction(SIGTERM, &sigact, 0) > 0 )
+    if ( sigaction(SIGHUP, &sigact, nullptr) > 0
+         || sigaction(SIGINT, &sigact, nullptr) > 0
+         || sigaction(SIGTERM, &sigact, nullptr) > 0 )
     {
         log("sigaction() failed!", LogError);
         return false;
@@ -64,7 +64,9 @@ bool UnixSignalHandler::create(QObject *parent)
 void UnixSignalHandler::exitSignalHandler(int)
 {
     const qint64 pid = QCoreApplication::applicationPid();
-    ::write(signalFd[Write], &pid, sizeof(pid));
+    const auto written = ::write(signalFd[Write], &pid, sizeof(pid));
+    if (written == -1)
+        log("Failed to handle signal!", LogError);
 }
 
 void UnixSignalHandler::handleSignal()

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -38,7 +38,7 @@ namespace Ui {
 class ActionDialog : public QDialog {
     Q_OBJECT
 public:
-    explicit ActionDialog(QWidget *parent = 0);
+    explicit ActionDialog(QWidget *parent = nullptr);
     ~ActionDialog();
 
     /** Restore command history from configuration. */
@@ -56,8 +56,6 @@ public:
     void setCommand(const Command &cmd);
     /** Set texts for tabs in combo box. */
     void setOutputTabs(const QStringList &tabs, const QString &currentTabName);
-    /** Set output item. */
-    void setOutputIndex(const QModelIndex &index);
 
     /** Load settings. */
     void loadSettings();
@@ -66,11 +64,7 @@ public:
     Command command() const;
 
 public slots:
-    /** Create action from dialog's content. */
-    void createAction();
-
-    void accept();
-    void done(int r);
+    void done(int r) override;
 
 signals:
     /** Emitted if dialog was accepted. */
@@ -83,6 +77,9 @@ signals:
     void closed(ActionDialog *self);
 
 private slots:
+    /** Create action from dialog's content. */
+    void createAction();
+
     void on_buttonBox_clicked(QAbstractButton* button);
     void on_comboBoxCommands_currentIndexChanged(int index);
     void on_comboBoxInputFormat_currentIndexChanged(const QString &format);
@@ -92,11 +89,10 @@ private slots:
 
 private:
     QVariant createCurrentItemData();
-    void saveItemData();
+    void saveCurrentCommandToHistory();
 
     Ui::ActionDialog *ui;
     QVariantMap m_data;
-    QPersistentModelIndex m_index;
     QStringList m_capturedTexts;
 
     int m_currentCommandIndex;

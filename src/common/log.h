@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,8 +20,7 @@
 #ifndef LOG_H
 #define LOG_H
 
-#include <QByteArray>
-
+class QByteArray;
 class QString;
 
 enum LogLevel {
@@ -33,17 +32,21 @@ enum LogLevel {
     LogTrace
 };
 
-QString readLogFile();
+QString logFileName();
+
+QString readLogFile(int maxReadSize);
 
 void createSessionMutex();
 
 bool hasLogLevel(LogLevel level);
 
+QByteArray logLevelLabel(LogLevel level);
+
 #define COPYQ_LOG(msg) do { if ( hasLogLevel(LogDebug) ) log(msg, LogDebug); } while (false)
 #define COPYQ_LOG_VERBOSE(msg) do { if ( hasLogLevel(LogTrace) ) log(msg, LogTrace); } while (false)
 
-QString createLogMessage(const QString &text, const LogLevel level);
+void log(const QString &text, LogLevel level = LogNote);
 
-void log(const QString &text, const LogLevel level = LogNote);
+void setCurrentThreadName(const QString &name);
 
 #endif // LOG_H

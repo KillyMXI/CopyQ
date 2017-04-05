@@ -53,32 +53,33 @@ class ByteArrayClass : public QObject, public QScriptClass
 {
     Q_OBJECT
 public:
-    ByteArrayClass(QScriptEngine *engine);
+    explicit ByteArrayClass(QScriptEngine *engine);
     ~ByteArrayClass();
 
     QScriptValue constructor();
 
     QScriptValue newInstance(int size = 0);
     QScriptValue newInstance(const QByteArray &ba);
+    QScriptValue newInstance(const QString &text);
 
     QueryFlags queryProperty(const QScriptValue &object,
                              const QScriptString &name,
-                             QueryFlags flags, uint *id);
+                             QueryFlags flags, uint *id) override;
 
     QScriptValue property(const QScriptValue &object,
-                          const QScriptString &name, uint id);
+                          const QScriptString &name, uint id) override;
 
     void setProperty(QScriptValue &object, const QScriptString &name,
-                     uint id, const QScriptValue &value);
+                     uint id, const QScriptValue &value) override;
 
     QScriptValue::PropertyFlags propertyFlags(
-        const QScriptValue &object, const QScriptString &name, uint id);
+        const QScriptValue &object, const QScriptString &name, uint id) override;
 
-    QScriptClassPropertyIterator *newIterator(const QScriptValue &object);
+    QScriptClassPropertyIterator *newIterator(const QScriptValue &object) override;
 
-    QString name() const;
+    QString name() const override;
 
-    QScriptValue prototype() const;
+    QScriptValue prototype() const override;
 
 private:
     static QScriptValue construct(QScriptContext *ctx, QScriptEngine *eng);

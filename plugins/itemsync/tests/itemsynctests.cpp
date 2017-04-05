@@ -25,9 +25,11 @@
 #include <QDir>
 #include <QFile>
 
+#include <memory>
+
 namespace {
 
-typedef QSharedPointer<QFile> FilePtr;
+using FilePtr = std::shared_ptr<QFile>;
 
 const char sep[] = " ;; ";
 
@@ -38,7 +40,7 @@ QString fileNameForId(int i)
 
 class TestDir {
 public:
-    TestDir(int i, bool createPath = true)
+    explicit TestDir(int i, bool createPath = true)
         : m_dir(ItemSyncTests::testDir(i))
     {
         clear();
@@ -54,7 +56,7 @@ public:
     void clear()
     {
         if (isValid()) {
-            foreach ( const QString &fileName, files() )
+            for ( const auto &fileName : files() )
                 remove(fileName);
             m_dir.rmpath(".");
         }
@@ -78,7 +80,7 @@ public:
 
     FilePtr file(const QString &fileName) const
     {
-        return FilePtr(new QFile(filePath(fileName)));
+        return std::make_shared<QFile>(filePath(fileName));
     }
 
     QString filePath(const QString &fileName) const
@@ -132,13 +134,12 @@ QString ItemSyncTests::testDir(int i)
 
 void ItemSyncTests::initTestCase()
 {
-    TEST(m_test->init());
-    cleanup();
+    TEST(m_test->initTestCase());
 }
 
 void ItemSyncTests::cleanupTestCase()
 {
-    TEST(m_test->stopServer());
+    TEST(m_test->cleanupTestCase());
 }
 
 void ItemSyncTests::init()
@@ -273,9 +274,12 @@ void ItemSyncTests::removeItems()
               + sep + fileD
               );
 
-    SKIP("Removing files with \"remove\" command doesn't work!");
-    RUN(args << "remove" << "1", "");
-    QCOMPARE( dir1.files().join(sep), fileD );
+    // Removing items from script won't work.
+    RUN_EXPECT_ERROR(args << "remove" << "1", CommandException);
+    QCOMPARE( dir1.files().join(sep),
+              fileA
+              + sep + fileD
+              );
 }
 
 void ItemSyncTests::removeFiles()

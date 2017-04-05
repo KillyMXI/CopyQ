@@ -19,6 +19,7 @@
 
 #include "macplatform.h"
 
+#include "app/applicationexceptionhandler.h"
 #include "common/log.h"
 #include "copyqpasteboardmime.h"
 #include "foregroundbackgroundfilter.h"
@@ -29,8 +30,10 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QGuiApplication>
 #include <QScopedPointer>
+#include <QStringList>
 
 #include <Cocoa/Cocoa.h>
 #include <Carbon/Carbon.h>
@@ -147,10 +150,15 @@ MacPlatform::MacPlatform()
 {
 }
 
+QCoreApplication *MacPlatform::createConsoleApplication(int &argc, char **argv)
+{
+    return new ApplicationExceptionHandler<QCoreApplication>(argc, argv);
+}
+
 QApplication *MacPlatform::createServerApplication(int &argc, char **argv)
 {
     MacActivity activity(MacActivity::Background, "CopyQ Server");
-    QApplication *app = new ClipboardApplication(argc, argv);
+    QApplication *app = new ApplicationExceptionHandler<ClipboardApplication>(argc, argv);
 
     // Switch the app to foreground when in foreground
     ForegroundBackgroundFilter::installFilter(app);
@@ -161,18 +169,67 @@ QApplication *MacPlatform::createServerApplication(int &argc, char **argv)
 QApplication *MacPlatform::createMonitorApplication(int &argc, char **argv)
 {
     MacActivity activity(MacActivity::Background, "CopyQ clipboard monitor");
-    return new ClipboardApplication(argc, argv);
+    return new ApplicationExceptionHandler<ClipboardApplication>(argc, argv);
 }
 
 QCoreApplication *MacPlatform::createClientApplication(int &argc, char **argv)
 {
     MacActivity activity(MacActivity::User, "CopyQ Client");
-    return new QCoreApplication(argc, argv);
+    return new ApplicationExceptionHandler<QCoreApplication>(argc, argv);
 }
 
 PlatformClipboardPtr MacPlatform::clipboard()
 {
     return PlatformClipboardPtr(new MacClipboard());
+}
+
+QStringList MacPlatform::getCommandLineArguments(int argc, char **argv)
+{
+    QStringList arguments;
+
+    for (int i = 1; i < argc; ++i)
+        arguments.append( QString::fromUtf8(argv[i]) );
+
+    return arguments;
+}
+
+bool MacPlatform::findPluginDir(QDir *pluginsDir)
+{
+    pluginsDir->setPath( qApp->applicationDirPath() );
+    if (pluginsDir->dirName() != "MacOS") {
+        return false;
+    }
+
+    if ( pluginsDir->cdUp() // Contents
+            && pluginsDir->cd("Plugins")
+            && pluginsDir->cd("copyq"))
+    {
+        // OK, found it in the bundle
+        COPYQ_LOG("Found plugins in application bundle");
+        return true;
+    }
+
+    pluginsDir->setPath( qApp->applicationDirPath() );
+
+    if ( pluginsDir->cdUp() // Contents
+            && pluginsDir->cdUp() // copyq.app
+            && pluginsDir->cdUp() // repo root
+            && pluginsDir->cd("plugins")) {
+        COPYQ_LOG("Found plugins in build tree");
+        return true;
+    }
+
+    return false;
+}
+
+QString MacPlatform::defaultEditorCommand()
+{
+    return "open -t -W -n %1";
+}
+
+QString MacPlatform::translationPrefix()
+{
+    return QCoreApplication::applicationDirPath() + "/../Resources/translations";
 }
 
 PlatformWindowPtr MacPlatform::getCurrentWindow()

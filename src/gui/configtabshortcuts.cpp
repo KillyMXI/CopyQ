@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -40,7 +40,7 @@ ConfigTabShortcuts::~ConfigTabShortcuts()
     delete ui;
 }
 
-void ConfigTabShortcuts::loadShortcuts(QSettings &settings)
+void ConfigTabShortcuts::loadShortcuts(const QSettings &settings)
 {
     ui->shortcutsWidgetGeneral->loadShortcuts(settings);
 
@@ -48,7 +48,7 @@ void ConfigTabShortcuts::loadShortcuts(QSettings &settings)
     ui->pushButtonOpenCommandDialog->setIcon(iconCommandDialog);
 }
 
-void ConfigTabShortcuts::saveShortcuts(QSettings &settings) const
+void ConfigTabShortcuts::saveShortcuts(QSettings *settings) const
 {
     ui->shortcutsWidgetGeneral->saveShortcuts(settings);
 }

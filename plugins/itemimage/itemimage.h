@@ -24,7 +24,11 @@
 #include "item/itemwidget.h"
 
 #include <QLabel>
-#include <QScopedPointer>
+#include <QPixmap>
+
+#include <memory>
+
+class QMovie;
 
 namespace Ui {
 class ItemImageSettings;
@@ -35,16 +39,30 @@ class ItemImage : public QLabel, public ItemWidget
     Q_OBJECT
 
 public:
-    ItemImage(const QPixmap &pix, const QString &imageEditor, const QString &svgEditor,
-              QWidget *parent);
+    ItemImage(
+            const QPixmap &pix,
+            const QByteArray &animationData, const QByteArray &animationFormat,
+            const QString &imageEditor, const QString &svgEditor,
+            QWidget *parent);
 
-    virtual QWidget *createEditor(QWidget *) const { return NULL; }
+    QWidget *createEditor(QWidget *) const override { return nullptr; }
 
-    virtual QObject *createExternalEditor(const QModelIndex &index, QWidget *parent) const;
+    QObject *createExternalEditor(const QModelIndex &index, QWidget *parent) const override;
+
+protected:
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
 private:
+    void startAnimation();
+    void stopAnimation();
+
     QString m_editor;
     QString m_svgEditor;
+    QPixmap m_pixmap;
+    QByteArray m_animationData;
+    QByteArray m_animationFormat;
+    QMovie *m_animation;
 };
 
 class ItemImageLoader : public QObject, public ItemLoaderInterface
@@ -57,27 +75,27 @@ public:
     ItemImageLoader();
     ~ItemImageLoader();
 
-    virtual ItemWidget *create(const QModelIndex &index, QWidget *parent) const;
+    ItemWidget *create(const QModelIndex &index, QWidget *parent, bool preview) const override;
 
-    virtual int priority() const { return 10; }
+    int priority() const override { return 15; }
 
-    virtual QString id() const { return "itemimage"; }
-    virtual QString name() const { return tr("Images"); }
-    virtual QString author() const { return QString(); }
-    virtual QString description() const { return tr("Display images."); }
-    virtual QVariant icon() const { return QVariant(IconCamera); }
+    QString id() const override { return "itemimage"; }
+    QString name() const override { return tr("Images"); }
+    QString author() const override { return QString(); }
+    QString description() const override { return tr("Display images."); }
+    QVariant icon() const override { return QVariant(IconCamera); }
 
-    virtual QStringList formatsToSave() const;
+    QStringList formatsToSave() const override;
 
-    virtual QVariantMap applySettings();
+    QVariantMap applySettings() override;
 
-    virtual void loadSettings(const QVariantMap &settings) { m_settings = settings; }
+    void loadSettings(const QVariantMap &settings) override { m_settings = settings; }
 
-    virtual QWidget *createSettingsWidget(QWidget *parent);
+    QWidget *createSettingsWidget(QWidget *parent) override;
 
 private:
     QVariantMap m_settings;
-    QScopedPointer<Ui::ItemImageSettings> ui;
+    std::unique_ptr<Ui::ItemImageSettings> ui;
 };
 
 #endif // ITEMIMAGE_H

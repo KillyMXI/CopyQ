@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -40,7 +40,7 @@ class DirPrototype : public QObject, public QScriptable
 {
     Q_OBJECT
 public:
-    explicit DirPrototype(QObject *parent = 0);
+    explicit DirPrototype(QObject *parent = nullptr);
 
 public slots:
     QScriptValue absoluteFilePath(const QScriptValue &fileName) const;

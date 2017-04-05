@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,6 +24,7 @@
 #include "common/clientsocket.h"
 #include "common/commandstatus.h"
 #include "common/log.h"
+#include "item/itemwidget.h"
 #include "../qt/bytearrayclass.h"
 
 #include <QApplication>
@@ -32,167 +33,76 @@
 
 Q_DECLARE_METATYPE(QByteArray*)
 
-namespace {
-
-#define SCRIPT_LOG(text) \
-    COPYQ_LOG( QString("Script %1: %2").arg(m_id).arg(text) )
-
-QByteArray serializeScriptValue(const QScriptValue &value)
+ScriptableWorkerSocketGuard::ScriptableWorkerSocketGuard(const ClientSocketPtr &socket)
+    : m_socket(socket)
 {
-    QByteArray data;
-
-    QByteArray *bytes = qscriptvalue_cast<QByteArray*>(value.data());
-
-    if (bytes != NULL) {
-        data = *bytes;
-    } else if ( value.isArray() ) {
-        const quint32 len = value.property("length").toUInt32();
-        for (quint32 i = 0; i < len; ++i)
-            data += serializeScriptValue(value.property(i));
-    } else if ( !value.isUndefined() ) {
-        data = value.toString().toUtf8() + '\n';
-    }
-
-    return data;
 }
 
-} // namespace
+ScriptableWorkerSocketGuard::~ScriptableWorkerSocketGuard()
+{
+    m_socket = nullptr;
+}
+
+ClientSocket *ScriptableWorkerSocketGuard::socket() const
+{
+    return m_socket.get();
+}
 
 ScriptableWorker::ScriptableWorker(
-        MainWindow *mainWindow, const Arguments &args, ClientSocket *socket,
-        const QString &pluginScript)
+        MainWindow *mainWindow,
+        const ClientSocketPtr &socket,
+        const QList<ItemScriptable*> &scriptables)
     : QRunnable()
     , m_wnd(mainWindow)
-    , m_args(args)
-    , m_socket(socket)
-    , m_pluginScript(pluginScript)
+    , m_socketGuard(new ScriptableWorkerSocketGuard(socket))
+    , m_scriptables(scriptables)
 {
-    if ( hasLogLevel(LogDebug) )
-        m_id = m_socket->property("id").toString();
 }
+
+ScriptableWorker::~ScriptableWorker() = default;
 
 void ScriptableWorker::run()
 {
-    if ( hasLogLevel(LogDebug) ) {
-        bool isEval = m_args.length() == Arguments::Rest + 2
-                && m_args.at(Arguments::Rest) == "eval";
+    auto socket = m_socketGuard->socket();
 
-        for (int i = Arguments::Rest + (isEval ? 1 : 0); i < m_args.length(); ++i) {
-            QString indent = isEval ? QString("EVAL:")
-                                    : (QString::number(i - Arguments::Rest + 1) + " ");
-            foreach (const QByteArray &line, m_args.at(i).split('\n')) {
-                SCRIPT_LOG( indent + getTextData(line) );
-                indent = "  ";
-            }
-        }
-    }
-
-    bool hasData;
-    const quintptr id = m_args.at(Arguments::ActionId).toULongLong(&hasData);
-    QVariantMap data;
-    if (hasData)
-        data = Action::data(id);
-
-    const QString currentPath = getTextData(m_args.at(Arguments::CurrentPath));
+    setCurrentThreadName("Script-" + QString::number(socket->id()));
 
     QScriptEngine engine;
-    ScriptableProxy proxy(m_wnd, data);
-    Scriptable scriptable(&proxy);
-    scriptable.initEngine(&engine, currentPath, data);
+    ScriptableProxy proxy(m_wnd);
+    Scriptable scriptable(&engine, &proxy);
 
-    if (m_socket) {
-        QObject::connect( proxy.signaler(), SIGNAL(sendMessage(QByteArray,int)),
-                          m_socket, SLOT(sendMessage(QByteArray,int)) );
+    QObject::connect( &proxy, SIGNAL(sendMessage(QByteArray,int)),
+                      socket, SLOT(sendMessage(QByteArray,int)) );
 
-        QObject::connect( &scriptable, SIGNAL(sendMessage(QByteArray,int)),
-                          m_socket, SLOT(sendMessage(QByteArray,int)) );
-        QObject::connect( m_socket, SIGNAL(messageReceived(QByteArray,int)),
-                          &scriptable, SLOT(setInput(QByteArray)) );
+    QObject::connect( &scriptable, SIGNAL(sendMessage(QByteArray,int)),
+                      socket, SLOT(sendMessage(QByteArray,int)) );
+    QObject::connect( socket, SIGNAL(messageReceived(QByteArray,int)),
+                      &scriptable, SLOT(onMessageReceived(QByteArray,int)) );
 
-        QObject::connect( m_socket, SIGNAL(disconnected()),
-                          &scriptable, SLOT(abort()) );
-        QObject::connect( &scriptable, SIGNAL(destroyed()),
-                          m_socket, SLOT(deleteAfterDisconnected()) );
+    QObject::connect( socket, SIGNAL(disconnected()),
+                      &scriptable, SLOT(onDisconnected()) );
+    QObject::connect( socket, SIGNAL(connectionFailed()),
+                      &scriptable, SLOT(onDisconnected()) );
 
-        if ( m_socket->isClosed() ) {
-            SCRIPT_LOG("TERMINATED");
-            return;
-        }
+    QMetaObject::invokeMethod(socket, "start", Qt::QueuedConnection);
 
-        m_socket->start();
+    auto plugins = engine.newObject();
+    engine.globalObject().setProperty("plugins", plugins);
+
+    for (auto scriptableObject : m_scriptables) {
+        scriptableObject->setScriptable(&scriptable);
+        const auto obj = engine.newQObject(scriptableObject);
+        const auto name = scriptableObject->objectName();
+        plugins.setProperty(name, obj);
+        scriptableObject->start();
     }
 
-    QObject::connect( &scriptable, SIGNAL(requestApplicationQuit()),
-                      qApp, SLOT(quit()) );
+    while ( scriptable.isConnected() )
+        QCoreApplication::processEvents();
 
-    QByteArray response;
-    int exitCode;
+    for (auto scriptableObject : m_scriptables)
+        scriptableObject->deleteLater();
+    m_scriptables.clear();
 
-    if ( m_args.length() <= Arguments::Rest ) {
-        SCRIPT_LOG("Error: bad command syntax");
-        exitCode = CommandBadSyntax;
-    } else {
-        const QString cmd = getTextData( m_args.at(Arguments::Rest) );
-
-#ifdef HAS_TESTS
-        if ( cmd == "flush" && m_args.length() == Arguments::Rest + 2 ) {
-            log( "flush ID: " + getTextData(m_args.at(Arguments::Rest + 1)), LogAlways );
-            scriptable.sendMessageToClient(QByteArray(), CommandFinished);
-            return;
-        }
-#endif
-
-        QScriptValue fn = engine.globalObject().property(cmd);
-        if ( !fn.isFunction() ) {
-            SCRIPT_LOG("Error: unknown command");
-            const QString msg =
-                    Scriptable::tr("Name \"%1\" doesn't refer to a function.").arg(cmd);
-            response = createLogMessage(msg, LogError).toUtf8();
-            exitCode = CommandError;
-        } else {
-            /* Special arguments:
-             * "-"  read this argument from stdin
-             * "--" read all following arguments without control sequences
-             */
-            QScriptValueList fnArgs;
-            bool readRaw = false;
-            for ( int i = Arguments::Rest + 1; i < m_args.length(); ++i ) {
-                const QByteArray &arg = m_args.at(i);
-                if (!readRaw && arg == "--") {
-                    readRaw = true;
-                } else {
-                    const QScriptValue value = readRaw || arg != "-"
-                            ? scriptable.newByteArray(arg)
-                            : scriptable.input();
-                    fnArgs.append(value);
-                }
-            }
-
-            engine.evaluate(m_pluginScript);
-            QScriptValue result = fn.call(QScriptValue(), fnArgs);
-
-            if ( engine.hasUncaughtException() ) {
-                const QString exceptionText =
-                        QString("%1\n--- backtrace ---\n%2\n--- end backtrace ---")
-                        .arg( engine.uncaughtException().toString(),
-                              engine.uncaughtExceptionBacktrace().join("\n") );
-
-                SCRIPT_LOG( QString("Error: Exception in command \"%1\": %2")
-                             .arg(cmd, exceptionText) );
-
-                response = createLogMessage(exceptionText, LogError).toUtf8();
-                exitCode = CommandError;
-            } else {
-                response = serializeScriptValue(result);
-                exitCode = CommandFinished;
-            }
-        }
-    }
-
-    if (exitCode == CommandFinished && hasData)
-        Action::setData(id, scriptable.data());
-
-    scriptable.sendMessageToClient(response, exitCode);
-
-    SCRIPT_LOG("DONE");
+    QMetaObject::invokeMethod(m_socketGuard, "deleteLater", Qt::QueuedConnection);
 }

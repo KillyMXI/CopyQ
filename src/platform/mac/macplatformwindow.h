@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -29,8 +29,8 @@
 @class NSWindow;
 @class NSRunningApplication;
 #else
-typedef void NSWindow;
-typedef void NSRunningApplication;
+using NSWindow = void;
+using NSRunningApplication = void;
 #endif
 
 class MacPlatformWindow : public PlatformWindow

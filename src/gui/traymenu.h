@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,6 +22,7 @@
 
 #include <QMenu>
 #include <QPointer>
+#include <QTimer>
 
 class QModelIndex;
 
@@ -29,10 +30,7 @@ class TrayMenu : public QMenu
 {
     Q_OBJECT
 public:
-    explicit TrayMenu(QWidget *parent = NULL);
-
-    /** Show/hide menu. */
-    void toggle();
+    explicit TrayMenu(QWidget *parent = nullptr);
 
     /**
      * Add clipboard item action with number key hint.
@@ -41,38 +39,56 @@ public:
      */
     void addClipboardItemAction(const QModelIndex &index, bool showImages, bool isCurrent);
 
+    void clearClipboardItems();
+
     /** Add custom action. */
     void addCustomAction(QAction *action);
 
     /** Clear clipboard item actions and curstom actions. */
     void clearAllActions();
 
-    /** Select first enabled menu item. */
-    void setActiveFirstEnabledAction();
-
     /** Handle Vi shortcuts. */
     void setViModeEnabled(bool enabled);
+
+    /** Filter clipboard items. */
+    void search(const QString &text);
 
 signals:
     /** Emitted if numbered action triggered. */
     void clipboardItemActionTriggered(uint clipboardItemHash, bool omitPaste);
 
+    void searchRequest(const QString &text);
+
 private slots:
     void onClipboardItemActionTriggered();
 
+    void updateActiveAction();
+
 protected:
-    void keyPressEvent(QKeyEvent *event);
-    void mousePressEvent(QMouseEvent *event);
+    void keyPressEvent(QKeyEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+    void actionEvent(QActionEvent *event) override;
+
+    void leaveEvent(QEvent *event) override;
 
 private:
     void resetSeparators();
+    void setSearchMenuItem(const QString &text);
 
     QPointer<QAction> m_clipboardItemActionsSeparator;
     QPointer<QAction> m_customActionsSeparator;
+    QPointer<QAction> m_searchAction;
     int m_clipboardItemActionCount;
 
     bool m_omitPaste;
     bool m_viMode;
+
+    QString m_searchText;
+
+    QTimer m_timerUpdateActiveAction;
 };
 
 #endif // TRAYMENU_H

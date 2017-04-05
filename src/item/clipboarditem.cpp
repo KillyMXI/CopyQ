@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,11 +19,12 @@
 
 #include "clipboarditem.h"
 
-#include "common/common.h"
 #include "common/contenttype.h"
 #include "common/mimetypes.h"
+#include "common/textdata.h"
 #include "item/serialize.h"
 
+#include <QBrush>
 #include <QByteArray>
 #include <QString>
 #include <QStringList>
@@ -33,7 +34,7 @@ namespace {
 
 void clearDataExceptInternal(QVariantMap *data)
 {
-    foreach ( const QString &format, data->keys() ) {
+    for ( const auto &format : data->keys() ) {
         if ( !format.startsWith(COPYQ_MIME_PREFIX) )
             data->remove(format);
     }
@@ -54,7 +55,7 @@ bool ClipboardItem::operator ==(const ClipboardItem &item) const
 
 void ClipboardItem::setText(const QString &text)
 {
-    foreach ( const QString &format, m_data.keys() ) {
+    for ( const auto &format : m_data.keys() ) {
         if ( format.startsWith("text/") )
             m_data.remove(format);
     }
@@ -77,7 +78,7 @@ bool ClipboardItem::setData(const QVariantMap &data)
 bool ClipboardItem::updateData(const QVariantMap &data)
 {
     const int oldSize = m_data.size();
-    foreach ( const QString &format, data.keys() ) {
+    for ( const auto &format : data.keys() ) {
         if ( !format.startsWith(COPYQ_MIME_PREFIX) ) {
             clearDataExceptInternal(&m_data);
             break;
@@ -86,9 +87,13 @@ bool ClipboardItem::updateData(const QVariantMap &data)
 
     bool changed = (oldSize != m_data.size());
 
-    foreach ( const QString &format, data.keys() ) {
-        if ( m_data.value(format) != data[format] ) {
-            m_data.insert(format, data[format]);
+    for ( const auto &format : data.keys() ) {
+        const auto &value = data[format];
+        if ( !value.isValid() ) {
+            m_data.remove(format);
+            changed = true;
+        } else if ( m_data.value(format) != value ) {
+            m_data.insert(format, value);
             changed = true;
         }
     }
@@ -108,7 +113,7 @@ bool ClipboardItem::removeData(const QStringList &mimeTypeList)
 {
     bool removed = false;
 
-    foreach (const QString &mimeType, mimeTypeList) {
+    for (const auto &mimeType : mimeTypeList) {
         if ( m_data.contains(mimeType) ) {
             m_data.remove(mimeType);
             removed = true;
@@ -129,29 +134,33 @@ void ClipboardItem::setData(const QString &mimeType, const QByteArray &data)
 
 QVariant ClipboardItem::data(int role) const
 {
-    if (role == Qt::DisplayRole || role == Qt::EditRole) {
+    switch(role) {
+    case Qt::DisplayRole:
+    case Qt::EditRole:
         if ( m_data.contains(mimeText) )
             return getTextData(m_data);
         if ( m_data.contains(mimeUriList) )
             return getTextData(m_data, mimeUriList);
-    } else if (role >= Qt::UserRole) {
-        if (role == contentType::data) {
-            return m_data; // copy-on-write, so this should be fast
-        } else if (role == contentType::hash) {
-            return dataHash();
-        } else if (role == contentType::hasText) {
-            return m_data.contains(mimeText) || m_data.contains(mimeUriList);
-        } else if (role == contentType::hasHtml) {
-            return m_data.contains(mimeHtml);
-        } else if (role == contentType::hasNotes) {
-            return m_data.contains(mimeItemNotes);
-        } else if (role == contentType::text) {
-            return getTextData(m_data);
-        } else if (role == contentType::html) {
-            return getTextData(m_data, mimeHtml);
-        } else if (role == contentType::notes) {
-            return getTextData(m_data, mimeItemNotes);
-        }
+        break;
+
+    case contentType::data:
+        return m_data; // copy-on-write, so this should be fast
+    case contentType::hash:
+        return dataHash();
+    case contentType::hasText:
+        return m_data.contains(mimeText) || m_data.contains(mimeUriList);
+    case contentType::hasHtml:
+        return m_data.contains(mimeHtml);
+    case contentType::text:
+        return getTextData(m_data);
+    case contentType::html:
+        return getTextData(m_data, mimeHtml);
+    case contentType::notes:
+        return getTextData(m_data, mimeItemNotes);
+    case contentType::color:
+        return getTextData(m_data, mimeColor);
+    case contentType::isHidden:
+        return m_data.contains(mimeHidden);
     }
 
     return QVariant();

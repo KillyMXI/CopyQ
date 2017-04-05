@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,13 +24,19 @@
 #include "item/itemeditor.h"
 
 #include <QAbstractItemModel>
+#include <QApplication>
+#include <QClipboard>
 #include <QEvent>
 #include <QFont>
+#include <QMimeData>
 #include <QModelIndex>
 #include <QMouseEvent>
 #include <QPalette>
 #include <QTextEdit>
+#include <QTextFormat>
 #include <QWidget>
+
+#include <QDebug>
 
 namespace {
 
@@ -39,13 +45,58 @@ bool canMouseInteract(const QMouseEvent &event)
     return event.modifiers() & Qt::ShiftModifier;
 }
 
+bool containsRichText(const QTextDocument &document)
+{
+    return document.allFormats().size() > 3;
+}
+
+QString findImageFormat(const QMimeData &data)
+{
+    const auto imageFormats = {"image/svg+xml", "image/png", "image/bmp", "image/jpeg", "image/gif"};
+    for (const auto &format : imageFormats) {
+        if ( data.hasFormat(format) )
+            return format;
+    }
+
+    return QString();
+}
+
+/**
+ * Text edit with support for pasting/dropping images.
+ *
+ * Images are saved in HTML in base64-encoded form.
+ */
+class TextEdit : public QTextEdit {
+public:
+    explicit TextEdit(QWidget *parent) : QTextEdit(parent) {}
+
+protected:
+    bool canInsertFromMimeData(const QMimeData *source) const override
+    {
+        return source->hasImage() || QTextEdit::canInsertFromMimeData(source);
+    }
+
+    void insertFromMimeData(const QMimeData *source) override
+    {
+        const QString mime = findImageFormat(*source);
+
+        if (!mime.isEmpty()) {
+            const QByteArray imageData = source->data(mime);
+            textCursor().insertHtml(
+                        "<img src=\"data:" + mime + ";base64," + imageData.toBase64() + "\" />");
+        } else {
+            QTextEdit::insertFromMimeData(source);
+        }
+    }
+};
+
 } // namespace
 
 ItemWidget::ItemWidget(QWidget *widget)
     : m_re()
     , m_widget(widget)
 {
-    Q_ASSERT(widget != NULL);
+    Q_ASSERT(widget != nullptr);
 
     // Object name for style sheet.
     widget->setObjectName("item");
@@ -76,7 +127,7 @@ void ItemWidget::setHighlight(const QRegExp &re, const QFont &highlightFont,
 
 QWidget *ItemWidget::createEditor(QWidget *parent) const
 {
-    QTextEdit *editor = new QTextEdit(parent);
+    QTextEdit *editor = new TextEdit(parent);
     editor->setFrameShape(QFrame::NoFrame);
     return editor;
 }
@@ -84,9 +135,14 @@ QWidget *ItemWidget::createEditor(QWidget *parent) const
 void ItemWidget::setEditorData(QWidget *editor, const QModelIndex &index) const
 {
     QTextEdit *textEdit = qobject_cast<QTextEdit *>(editor);
-    if (textEdit != NULL) {
-        const QString text = index.data(Qt::EditRole).toString();
-        textEdit->setPlainText(text);
+    if (textEdit != nullptr) {
+        if ( index.data(contentType::hasHtml).toBool() ) {
+            const QString html = index.data(contentType::html).toString();
+            textEdit->setHtml(html);
+        } else {
+            const QString text = index.data(Qt::EditRole).toString();
+            textEdit->setPlainText(text);
+        }
         textEdit->selectAll();
     }
 }
@@ -95,8 +151,16 @@ void ItemWidget::setModelData(QWidget *editor, QAbstractItemModel *model,
                               const QModelIndex &index) const
 {
     QTextEdit *textEdit = qobject_cast<QTextEdit*>(editor);
-    if (textEdit != NULL) {
-        model->setData(index, textEdit->toPlainText());
+    if (textEdit != nullptr) {
+        // Clear text.
+        model->setData(index, QString());
+
+        QVariantMap data;
+        data["text/plain"] = textEdit->toPlainText().toUtf8();
+        if ( containsRichText(*textEdit->document()) )
+            data["text/html"] = textEdit->toHtml().toUtf8();
+        model->setData(index, data, contentType::updateData);
+
         textEdit->document()->setModified(false);
     }
 }
@@ -104,12 +168,12 @@ void ItemWidget::setModelData(QWidget *editor, QAbstractItemModel *model,
 bool ItemWidget::hasChanges(QWidget *editor) const
 {
     QTextEdit *textEdit = (qobject_cast<QTextEdit *>(editor));
-    return textEdit != NULL && textEdit->document() && textEdit->document()->isModified();
+    return textEdit != nullptr && textEdit->document() && textEdit->document()->isModified();
 }
 
 QObject *ItemWidget::createExternalEditor(const QModelIndex &, QWidget *) const
 {
-    return NULL;
+    return nullptr;
 }
 
 void ItemWidget::updateSize(const QSize &maximumSize, int idealWidth)
@@ -124,12 +188,6 @@ void ItemWidget::updateSize(const QSize &maximumSize, int idealWidth)
         w->setFixedSize( maximumSize.width(), maximumHeight );
     else
         w->setFixedSize(idealWidth, idealHeight);
-}
-
-void ItemWidget::setCurrent(bool current)
-{
-    // Propagate mouse events to item list until the item is selected.
-    widget()->setAttribute(Qt::WA_TransparentForMouseEvents, !current);
 }
 
 bool ItemWidget::filterMouseEvents(QTextEdit *edit, QEvent *event)
@@ -183,62 +241,88 @@ bool ItemWidget::filterMouseEvents(QTextEdit *edit, QEvent *event)
     return false;
 }
 
-ItemWidget *ItemLoaderInterface::create(const QModelIndex &, QWidget *) const
+QVariant ItemScriptable::call(const QString &method, const QVariantList &arguments)
 {
-    return NULL;
+    QVariant result;
+    QMetaObject::invokeMethod(
+                m_scriptable, "call", Qt::DirectConnection,
+                Q_RETURN_ARG(QVariant, result),
+                Q_ARG(const QString &, method),
+                Q_ARG(const QVariantList &, arguments));
+    return result;
 }
 
-bool ItemLoaderInterface::canLoadItems(QFile *) const
+QVariant ItemScriptable::eval(const QString &script)
+{
+    return call("eval", QVariantList() << script);
+}
+
+QVariantList ItemScriptable::currentArguments()
+{
+    QVariantList arguments;
+    QMetaObject::invokeMethod(
+                m_scriptable, "currentArguments", Qt::DirectConnection,
+                Q_RETURN_ARG(QVariantList, arguments) );
+    return arguments;
+}
+
+bool ItemSaverInterface::saveItems(const QString &, const QAbstractItemModel &, QIODevice *)
 {
     return false;
 }
 
-bool ItemLoaderInterface::canSaveItems(const QAbstractItemModel &) const
+bool ItemSaverInterface::canRemoveItems(const QList<QModelIndex> &, QString *)
+{
+    return true;
+}
+
+bool ItemSaverInterface::canMoveItems(const QList<QModelIndex> &)
+{
+    return true;
+}
+
+void ItemSaverInterface::itemsRemovedByUser(const QList<QModelIndex> &)
+{
+}
+
+QVariantMap ItemSaverInterface::copyItem(const QAbstractItemModel &, const QVariantMap &itemData)
+{
+    return itemData;
+}
+
+ItemWidget *ItemLoaderInterface::create(const QModelIndex &, QWidget *, bool) const
+{
+    return nullptr;
+}
+
+bool ItemLoaderInterface::canLoadItems(QIODevice *) const
 {
     return false;
 }
 
-bool ItemLoaderInterface::loadItems(QAbstractItemModel *, QFile *)
+bool ItemLoaderInterface::canSaveItems(const QString &) const
 {
     return false;
 }
 
-bool ItemLoaderInterface::saveItems(const QAbstractItemModel &, QFile *)
+ItemSaverPtr ItemLoaderInterface::loadItems(const QString &, QAbstractItemModel *, QIODevice *, int)
 {
-    return false;
+    return nullptr;
 }
 
-bool ItemLoaderInterface::initializeTab(QAbstractItemModel *)
+ItemSaverPtr ItemLoaderInterface::initializeTab(const QString &, QAbstractItemModel *, int)
 {
-    return false;
-}
-
-void ItemLoaderInterface::uninitializeTab(QAbstractItemModel *)
-{
+    return nullptr;
 }
 
 ItemWidget *ItemLoaderInterface::transform(ItemWidget *, const QModelIndex &)
 {
-    return NULL;
+    return nullptr;
 }
 
-bool ItemLoaderInterface::canRemoveItems(const QList<QModelIndex> &)
+ItemSaverPtr ItemLoaderInterface::transformSaver(const ItemSaverPtr &saver, QAbstractItemModel *)
 {
-    return true;
-}
-
-bool ItemLoaderInterface::canMoveItems(const QList<QModelIndex> &)
-{
-    return true;
-}
-
-void ItemLoaderInterface::itemsRemovedByUser(const QList<QModelIndex> &)
-{
-}
-
-QVariantMap ItemLoaderInterface::copyItem(const QAbstractItemModel &, const QVariantMap &itemData)
-{
-    return itemData;
+    return saver;
 }
 
 bool ItemLoaderInterface::matches(const QModelIndex &, const QRegExp &) const
@@ -248,17 +332,17 @@ bool ItemLoaderInterface::matches(const QModelIndex &, const QRegExp &) const
 
 QObject *ItemLoaderInterface::tests(const TestInterfacePtr &) const
 {
-    return NULL;
+    return nullptr;
 }
 
 const QObject *ItemLoaderInterface::signaler() const
 {
-    return NULL;
+    return nullptr;
 }
 
-QString ItemLoaderInterface::script() const
+ItemScriptable *ItemLoaderInterface::scriptableObject(QObject *)
 {
-    return QString();
+    return nullptr;
 }
 
 QList<Command> ItemLoaderInterface::commands() const

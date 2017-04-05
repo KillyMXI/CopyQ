@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -34,11 +34,11 @@ class AddCommandDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit AddCommandDialog(const QList<Command> &pluginCommands, QWidget *parent = NULL);
+    explicit AddCommandDialog(const QList<Command> &pluginCommands, QWidget *parent = nullptr);
     ~AddCommandDialog();
 
 public slots:
-    void accept();
+    void accept() override;
 
 signals:
     void addCommands(const QList<Command> &commands);

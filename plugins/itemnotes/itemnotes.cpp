@@ -71,11 +71,11 @@ ItemNotes::ItemNotes(ItemWidget *childItem, const QString &text, const QByteArra
                      bool notesAtBottom, bool showIconOnly, bool showToolTip)
     : QWidget( childItem->widget()->parentWidget() )
     , ItemWidget(this)
-    , m_notes(NULL)
-    , m_icon(NULL)
+    , m_notes(nullptr)
+    , m_icon(nullptr)
     , m_childItem(childItem)
     , m_notesAtBottom(notesAtBottom)
-    , m_timerShowToolTip(NULL)
+    , m_timerShowToolTip(nullptr)
     , m_toolTipText()
 {
     m_childItem->widget()->setObjectName("item_child");
@@ -112,7 +112,7 @@ ItemNotes::ItemNotes(ItemWidget *childItem, const QString &text, const QByteArra
 
         layout = new QVBoxLayout(this);
 
-        QHBoxLayout *labelLayout = new QHBoxLayout;
+        auto labelLayout = new QHBoxLayout;
         labelLayout->setMargin(0);
         labelLayout->setContentsMargins(notesIndent, 0, 0, 0);
 
@@ -143,26 +143,11 @@ ItemNotes::ItemNotes(ItemWidget *childItem, const QString &text, const QByteArra
     layout->setSpacing(0);
 }
 
-void ItemNotes::setCurrent(bool current)
-{
-    ItemWidget::setCurrent(current);
-
-    if (m_timerShowToolTip == NULL)
-        return;
-
-    QToolTip::hideText();
-
-    if (current)
-        m_timerShowToolTip->start();
-    else
-        m_timerShowToolTip->stop();
-}
-
 void ItemNotes::highlight(const QRegExp &re, const QFont &highlightFont, const QPalette &highlightPalette)
 {
     m_childItem->setHighlight(re, highlightFont, highlightPalette);
 
-    if (m_notes != NULL) {
+    if (m_notes != nullptr) {
         QList<QTextEdit::ExtraSelection> selections;
 
         if ( !re.isEmpty() ) {
@@ -200,24 +185,24 @@ void ItemNotes::highlight(const QRegExp &re, const QFont &highlightFont, const Q
 
 QWidget *ItemNotes::createEditor(QWidget *parent) const
 {
-    return m_childItem.isNull() ? NULL : m_childItem->createEditor(parent);
+    return (m_childItem == nullptr) ? nullptr : m_childItem->createEditor(parent);
 }
 
 void ItemNotes::setEditorData(QWidget *editor, const QModelIndex &index) const
 {
-    Q_ASSERT( !m_childItem.isNull() );
+    Q_ASSERT(m_childItem != nullptr);
     return m_childItem->setEditorData(editor, index);
 }
 
 void ItemNotes::setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const
 {
-    Q_ASSERT( !m_childItem.isNull() );
+    Q_ASSERT(m_childItem != nullptr);
     return m_childItem->setModelData(editor, model, index);
 }
 
 bool ItemNotes::hasChanges(QWidget *editor) const
 {
-    Q_ASSERT( !m_childItem.isNull() );
+    Q_ASSERT(m_childItem != nullptr);
     return m_childItem->hasChanges(editor);
 }
 
@@ -235,10 +220,12 @@ void ItemNotes::updateSize(const QSize &maximumSize, int idealWidth)
         const int w = maximumSize.width() - 2 * notesIndent - 8;
         QTextDocument *doc = m_notes->document();
         doc->setTextWidth(w);
-        m_notes->setFixedSize( doc->idealWidth() + 16, doc->size().height() );
+        m_notes->setFixedSize(
+                    static_cast<int>(doc->idealWidth()) + 16,
+                    static_cast<int>(doc->size().height()) );
     }
 
-    if ( !m_childItem.isNull() )
+    if (m_childItem != nullptr)
         m_childItem->updateSize(maximumSize, idealWidth);
 
     adjustSize();
@@ -250,7 +237,7 @@ void ItemNotes::paintEvent(QPaintEvent *event)
     QWidget::paintEvent(event);
 
     // Decorate notes.
-    if (m_notes != NULL) {
+    if (m_notes != nullptr) {
         QPainter p(this);
 
         QColor c = p.pen().color();
@@ -268,6 +255,26 @@ bool ItemNotes::eventFilter(QObject *, QEvent *event)
     return ItemWidget::filterMouseEvents(m_notes, event);
 }
 
+void ItemNotes::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+
+    if (m_timerShowToolTip != nullptr) {
+        QToolTip::hideText();
+        m_timerShowToolTip->start();
+    }
+}
+
+void ItemNotes::hideEvent(QHideEvent *event)
+{
+    if (m_timerShowToolTip != nullptr) {
+        QToolTip::hideText();
+        m_timerShowToolTip->stop();
+    }
+
+    QWidget::hideEvent(event);
+}
+
 void ItemNotes::showToolTip()
 {
     QToolTip::hideText();
@@ -282,9 +289,7 @@ ItemNotesLoader::ItemNotesLoader()
 {
 }
 
-ItemNotesLoader::~ItemNotesLoader()
-{
-}
+ItemNotesLoader::~ItemNotesLoader() = default;
 
 QStringList ItemNotesLoader::formatsToSave() const
 {
@@ -321,10 +326,11 @@ ItemWidget *ItemNotesLoader::transform(ItemWidget *itemWidget, const QModelIndex
 {
     const QString text = index.data(contentType::notes).toString();
     if ( text.isEmpty() )
-        return NULL;
+        return nullptr;
 
     const QByteArray icon = index.data(contentType::data).toMap().value(mimeIcon).toByteArray();
 
+    itemWidget->setTagged(true);
     return new ItemNotes( itemWidget, text, icon,
                           m_settings["notes_at_bottom"].toBool(),
                           m_settings["icon_only"].toBool(),

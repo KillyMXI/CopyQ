@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -53,16 +53,7 @@ IconSelectDialog::IconSelectDialog(const QString &defaultIcon, QWidget *parent)
     m_iconList->addItem( QString("") );
     m_iconList->item(0)->setSizeHint(size);
 
-    for (ushort i = IconFirst; i <= IconLast; ++i) {
-        QChar c(i);
-        if ( fm.inFont(c) ) {
-            const QString icon(c);
-            QListWidgetItem *item = new QListWidgetItem(icon, m_iconList);
-            item->setSizeHint(size);
-            if (defaultIcon == icon)
-                m_iconList->setCurrentRow(m_iconList->count() - 1);
-        }
-    }
+    addIcons();
 
     QPushButton *browseButton = new QPushButton(tr("Browse..."), this);
     if ( m_selectedIcon.size() > 2 )
@@ -77,10 +68,10 @@ IconSelectDialog::IconSelectDialog(const QString &defaultIcon, QWidget *parent)
     connect( buttonBox, SIGNAL(accepted()),
              this, SLOT(onAcceptCurrent()) );
 
-    QVBoxLayout *layout = new QVBoxLayout(this);
+    auto layout = new QVBoxLayout(this);
     layout->addWidget(m_iconList);
 
-    QHBoxLayout *buttonLayout = new QHBoxLayout;
+    auto buttonLayout = new QHBoxLayout;
     layout->addLayout(buttonLayout);
     buttonLayout->addWidget(browseButton);
     buttonLayout->addWidget(buttonBox);
@@ -125,4 +116,18 @@ void IconSelectDialog::onAcceptCurrent()
         onIconListItemActivated(index);
     else
         reject();
+}
+
+void IconSelectDialog::addIcons()
+{
+#include "add_icons.h"
+}
+
+void IconSelectDialog::addIcon(ushort unicode)
+{
+    const QString icon(unicode);
+    auto item = new QListWidgetItem(icon, m_iconList);
+    item->setSizeHint( m_iconList->gridSize() );
+    if (m_selectedIcon == icon)
+        m_iconList->setCurrentRow(m_iconList->count() - 1);
 }

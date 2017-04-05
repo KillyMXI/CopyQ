@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,13 +21,16 @@
 #include "ui_processmanagerdialog.h"
 
 #include "common/action.h"
-#include "common/common.h"
+#include "common/shortcuts.h"
 #include "gui/iconfont.h"
 #include "gui/icons.h"
 #include "gui/windowgeometryguard.h"
 
 #include <QDateTime>
 #include <QPushButton>
+
+#include <algorithm>
+#include <functional>
 
 namespace {
 
@@ -86,6 +89,11 @@ private:
     QTableWidget *m_table;
 };
 
+quintptr actionId(const Action *act)
+{
+    return reinterpret_cast<quintptr>(act);
+}
+
 } // namespace
 
 ProcessManagerDialog::ProcessManagerDialog(QWidget *parent)
@@ -101,7 +109,7 @@ ProcessManagerDialog::ProcessManagerDialog(QWidget *parent)
     for (int i = 0; i < tableCommandsColumns::count; ++i)
         t->setHorizontalHeaderItem(i, new QTableWidgetItem(columnText(i)) );
 
-    QAction *act = new QAction(this);
+    auto act = new QAction(this);
     act->setShortcut(shortcutToRemove());
     connect( act, SIGNAL(triggered()),
              this, SLOT(onDeleteShortcut()) );
@@ -126,7 +134,7 @@ void ProcessManagerDialog::actionAboutToStart(Action *action)
 
     t->item(0, tableCommandsColumns::name)->setToolTip(command);
 
-    const QVariant id = action->property("COPYQ_ACTION_ID");
+    const auto id = actionId(action);
     QTableWidgetItem *statusItem = t->item(0, tableCommandsColumns::status);
     statusItem->setData(statusItemData::actionId, id);
     statusItem->setData(statusItemData::status, QProcess::Starting);
@@ -150,7 +158,7 @@ void ProcessManagerDialog::actionStarted(Action *action)
     SortingGuard sortGuard(t);
 
     QTableWidgetItem *statusItem = t->item(row, tableCommandsColumns::status);
-    statusItem->setText(tr("Runnning"));
+    statusItem->setText(tr("Running"));
     statusItem->setData(statusItemData::status, QProcess::Running);
     updateTable();
 }
@@ -208,13 +216,13 @@ void ProcessManagerDialog::onDeleteShortcut()
 
     QVector<int> rows( selectedItems.size() );
 
-    foreach (QTableWidgetItem *item, selectedItems)
+    for (auto item : selectedItems)
         rows.append( ui->tableWidgetCommands->row(item) );
 
-    qSort( rows.begin(), rows.end(), qGreater<int>() );
+    std::sort( rows.begin(), rows.end(), std::greater<int>() );
 
     int lastRow = -1;
-    foreach (int row, rows) {
+    for (int row : rows) {
         if (lastRow != row) {
             removeIfNotRunning(row);
             lastRow = row;
@@ -225,7 +233,7 @@ void ProcessManagerDialog::onDeleteShortcut()
 int ProcessManagerDialog::getRowForAction(Action *action) const
 {
     QTableWidget *t = ui->tableWidgetCommands;
-    const QVariant id = action->property("COPYQ_ACTION_ID");
+    const auto id = actionId(action);
     for (int row = 0; row < t->rowCount(); ++row) {
         if ( t->item(row, tableCommandsColumns::status)->data(statusItemData::actionId) == id )
             return row;

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,34 +22,37 @@
 
 #include "platform/platformwindow.h"
 
-#include "x11displayguard.h"
+#include <X11/Xlib.h>
+
+#include <memory>
 
 class QWidget;
+class X11DisplayGuard;
 
 class X11PlatformWindow : public PlatformWindow
 {
 public:
-    explicit X11PlatformWindow(X11DisplayGuard &d);
+    explicit X11PlatformWindow(const std::shared_ptr<X11DisplayGuard> &d);
 
-    X11PlatformWindow(X11DisplayGuard &d, Window winId);
+    X11PlatformWindow(const std::shared_ptr<X11DisplayGuard> &d, Window winId);
 
-    QString getTitle();
+    QString getTitle() override;
 
-    void raise();
+    void raise() override;
 
-    void pasteClipboard();
+    void pasteClipboard() override;
 
-    void copy();
+    void copy() override;
 
     bool isValid() const;
 
 private:
-    bool hasFocus();
+    bool waitForFocus(int ms);
 
     void sendKeyPress(int modifier, int key);
 
     Window m_window;
-    X11DisplayGuard d;
+    std::shared_ptr<X11DisplayGuard> d;
 };
 
 #endif // X11PLATFORMWINDOW_H

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -47,32 +47,24 @@
 #include <QSettings>
 #include <QTranslator>
 
-#ifdef Q_OS_WIN
-#   define DEFAULT_EDITOR "notepad %1"
-#elif defined(Q_OS_MAC)
-#   define DEFAULT_EDITOR "open -t %1"
-#else
-#   define DEFAULT_EDITOR "gedit %1"
-#endif
-
 namespace {
 
 class PluginItem : public ItemOrderList::Item {
 public:
-    explicit PluginItem(ItemLoaderInterface *loader)
+    explicit PluginItem(const ItemLoaderPtr &loader)
         : m_loader(loader)
     {
     }
 
-    QVariant data() const { return m_loader->id(); }
+    QVariant data() const override { return m_loader->id(); }
 
 private:
-    QWidget *createWidget(QWidget *parent) const
+    QWidget *createWidget(QWidget *parent) const override
     {
         return new PluginWidget(m_loader, parent);
     }
 
-    ItemLoaderInterface *m_loader;
+    ItemLoaderPtr m_loader;
 };
 
 QString nativeLanguageName(const QString &localeName)
@@ -98,6 +90,8 @@ ConfigurationManager::ConfigurationManager(ItemFactory *itemFactory, QWidget *pa
     ui->setupUi(this);
     setWindowIcon(appIcon());
 
+    ui->spinBoxItems->setMaximum(Config::maxItems);
+
     if ( itemFactory && itemFactory->hasLoaders() )
         initPluginWidgets(itemFactory);
     else
@@ -108,9 +102,18 @@ ConfigurationManager::ConfigurationManager(ItemFactory *itemFactory, QWidget *pa
     connect( ui->configTabShortcuts, SIGNAL(openCommandDialogRequest()),
              this, SIGNAL(openCommandDialogRequest()));
 
-    ui->configTabAppearance->createPreview(itemFactory);
+    if (itemFactory)
+        ui->configTabAppearance->createPreview(itemFactory);
 
     loadSettings();
+}
+
+ConfigurationManager::ConfigurationManager()
+    : ui(new Ui::ConfigurationManager)
+    , m_options()
+{
+    ui->setupUi(this);
+    initOptions();
 }
 
 ConfigurationManager::~ConfigurationManager()
@@ -138,7 +141,7 @@ void ConfigurationManager::initPluginWidgets(ItemFactory *itemFactory)
 {
     ui->itemOrderListPlugins->clearItems();
 
-    foreach ( ItemLoaderInterface *loader, itemFactory->loaders() ) {
+    for ( const auto &loader : itemFactory->loaders() ) {
         ItemOrderList::ItemPtr pluginItem(new PluginItem(loader));
         const QIcon icon = getIcon(loader->icon());
         ui->itemOrderListPlugins->appendItem(
@@ -155,8 +158,8 @@ void ConfigurationManager::initLanguages()
     bool currentLocaleFound = false; // otherwise not found or partial match ("uk" partially matches locale "uk_UA")
     QSet<QString> languages;
 
-    foreach ( const QString &path, qApp->property("CopyQ_translation_directories").toStringList() ) {
-        foreach ( const QString &item, QDir(path).entryList(QStringList("copyq_*.qm")) ) {
+    for ( const auto &path : qApp->property("CopyQ_translation_directories").toStringList() ) {
+        for ( const auto &item : QDir(path).entryList(QStringList("copyq_*.qm")) ) {
             const int i = item.indexOf('_');
             const QString locale = item.mid(i + 1, item.lastIndexOf('.') - i - 1);
             const QString language = nativeLanguageName(locale);
@@ -212,6 +215,7 @@ void ConfigurationManager::initOptions()
     bind<Config::notification_maximum_width>(ui->spinBoxNotificationMaximumWidth);
     bind<Config::notification_maximum_height>(ui->spinBoxNotificationMaximumHeight);
     bind<Config::edit_ctrl_return>(ui->checkBoxEditCtrlReturn);
+    bind<Config::show_simple_items>(ui->checkBoxShowSimpleItems);
     bind<Config::move>(ui->checkBoxMove);
     bind<Config::check_clipboard>(ui->checkBoxClip);
     bind<Config::confirm_exit>(ui->checkBoxConfirmExit);
@@ -243,7 +247,7 @@ void ConfigurationManager::initOptions()
 
     /* other options */
     bind<Config::command_history_size>();
-#ifdef COPYQ_WS_X11
+#ifdef HAS_MOUSE_SELECTIONS
     /* X11 clipboard selection monitoring and synchronization */
     bind<Config::check_selection>(ui->checkBoxSel);
     bind<Config::copy_clipboard>(ui->checkBoxCopyClip);
@@ -307,7 +311,7 @@ void ConfigurationManager::updateTabComboBoxes()
 QStringList ConfigurationManager::options() const
 {
     QStringList options;
-    foreach ( const QString &option, m_options.keys() ) {
+    for ( const auto &option : m_options.keys() ) {
         if ( m_options[option].value().canConvert(QVariant::String)
              && !optionToolTip(option).isEmpty() )
         {
@@ -348,7 +352,7 @@ void ConfigurationManager::loadSettings()
     QSettings settings;
 
     settings.beginGroup("Options");
-    foreach ( const QString &key, m_options.keys() ) {
+    for ( const auto &key : m_options.keys() ) {
         if ( settings.contains(key) ) {
             QVariant value = settings.value(key);
             if ( !value.isValid() || !m_options[key].setValue(value) )
@@ -401,7 +405,7 @@ void ConfigurationManager::on_buttonBox_clicked(QAbstractButton* button)
                     QMessageBox::Yes | QMessageBox::No,
                     QMessageBox::Yes);
         if (answer == QMessageBox::Yes) {
-            foreach ( const QString &key, m_options.keys() ) {
+            for ( const auto &key : m_options.keys() ) {
                 m_options[key].reset();
             }
         }
@@ -426,7 +430,7 @@ void ConfigurationManager::apply()
     Settings settings;
 
     settings.beginGroup("Options");
-    foreach ( const QString &key, m_options.keys() ) {
+    for ( const auto &key : m_options.keys() ) {
         settings.setValue( key, m_options[key].value() );
     }
     settings.endGroup();
@@ -434,11 +438,11 @@ void ConfigurationManager::apply()
     // Save configuration without command line alternatives only if option widgets are initialized
     // (i.e. clicked OK or Apply in configuration dialog).
     settings.beginGroup("Shortcuts");
-    ui->configTabShortcuts->saveShortcuts(*settings.settingsData());
+    ui->configTabShortcuts->saveShortcuts(settings.settingsData());
     settings.endGroup();
 
     settings.beginGroup("Theme");
-    ui->configTabAppearance->saveTheme(*settings.settingsData());
+    ui->configTabAppearance->saveTheme(settings.settingsData());
     settings.endGroup();
 
     // Save settings for each plugin.
@@ -457,9 +461,9 @@ void ConfigurationManager::apply()
         QWidget *w = ui->itemOrderListPlugins->widget(i);
         if (w) {
             PluginWidget *pluginWidget = qobject_cast<PluginWidget *>(w);
-            ItemLoaderInterface *loader = pluginWidget->loader();
+            const auto &loader = pluginWidget->loader();
             const QVariantMap s = loader->applySettings();
-            foreach (const QString &name, s.keys())
+            for (const auto &name : s.keys())
                 settings.setValue(name, s[name]);
         }
 
@@ -481,9 +485,14 @@ void ConfigurationManager::apply()
     // Language changes after restart.
     const int newLocaleIndex = ui->comboBoxLanguage->currentIndex();
     const QString newLocaleName = ui->comboBoxLanguage->itemData(newLocaleIndex).toString();
-    settings.setValue("Options/language", newLocaleName);
+    QString oldLocaleName = settings.value("Options/language").toString();
+    if (oldLocaleName.isEmpty())
+        oldLocaleName = "en";
     const QLocale oldLocale;
-    if (QLocale(newLocaleName).name() != oldLocale.name()) {
+
+    settings.setValue("Options/language", newLocaleName);
+
+    if (QLocale(newLocaleName).name() != oldLocale.name() && newLocaleName != oldLocaleName) {
         QMessageBox::information( this, tr("Restart Required"),
                                   tr("Language will be changed after application is restarted.") );
     }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,6 +22,7 @@
 #include "common/common.h"
 
 #include <QApplication>
+#include <QStringList>
 
 namespace {
 
@@ -32,9 +33,12 @@ QClipboard::Mode modeToQClipboardMode(PlatformClipboard::Mode mode)
         return QClipboard::Selection;
     case PlatformClipboard::FindBuffer:
         return QClipboard::FindBuffer;
-    default:
+    case PlatformClipboard::Clipboard:
         return QClipboard::Clipboard;
     }
+
+    Q_ASSERT(false);
+    return QClipboard::Clipboard;
 }
 
 } // namespace

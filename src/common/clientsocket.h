@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,29 +24,45 @@
 #include <QObject>
 #include <QPointer>
 
-class Arguments;
+class LocalSocketGuard
+{
+public:
+    explicit LocalSocketGuard(QLocalSocket *socket);
+    ~LocalSocketGuard();
+
+    QLocalSocket *get() const { return m_socket; }
+    QLocalSocket *operator->() const { return m_socket; }
+    operator QLocalSocket*() { return m_socket; }
+    operator bool() { return m_socket != nullptr; }
+
+private:
+    QPointer<QLocalSocket> m_socket;
+};
 
 class ClientSocket : public QObject
 {
     Q_OBJECT
-    friend class Server;
 public:
     ClientSocket();
 
-    explicit ClientSocket(QLocalSocket *socket, QObject *parent = NULL);
+    explicit ClientSocket(const QString &serverName, QObject *parent = nullptr);
+
+    explicit ClientSocket(QLocalSocket *socket, QObject *parent = nullptr);
 
     ~ClientSocket();
 
-    /// Start emiting messageReceived(). This method is thread-safe.
-    void start();
+    /// Return socket ID unique in process (thread-safe).
+    int id() const { return m_socketId; }
 
 public slots:
+    /// Start emiting messageReceived().
+    void start();
+
     /** Send message to client. */
     void sendMessage(
             const QByteArray &message, //!< Message for client.
             int messageCode //!< Custom message code.
             );
-    void deleteAfterDisconnected();
 
     void close();
 
@@ -55,6 +71,7 @@ public slots:
 signals:
     void messageReceived(const QByteArray &message, int messageCode);
     void disconnected();
+    void connectionFailed();
 
 private slots:
     void onReadyRead();
@@ -62,12 +79,15 @@ private slots:
     void onStateChanged(QLocalSocket::LocalSocketState state);
 
 private:
-    /// Receive arguments from client.
-    Arguments readArguments();
+    void error(const QString &errorMessage);
 
-    QPointer<QLocalSocket> m_socket;
-    bool m_deleteAfterDisconnected;
+    LocalSocketGuard m_socket;
+    int m_socketId;
     bool m_closed;
+
+    bool m_hasMessageLength = false;
+    quint32 m_messageLength = 0;
+    QByteArray m_message;
 };
 
 #endif // CLIENTSOCKET_H

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,6 +20,8 @@
 #ifndef ITEMDELEGATE_H
 #define ITEMDELEGATE_H
 
+#include "gui/clipboardbrowsershared.h"
+
 #include <QItemDelegate>
 #include <QRegExp>
 
@@ -27,7 +29,7 @@ class Item;
 class ItemEditorWidget;
 class ItemFactory;
 class ItemWidget;
-class QAbstractItemView;
+class ClipboardBrowser;
 
 /**
  * Delegate for items in ClipboardBrowser.
@@ -45,19 +47,22 @@ class ItemDelegate : public QItemDelegate
     Q_OBJECT
 
     public:
-        explicit ItemDelegate(QAbstractItemView *view, ItemFactory *itemFactory, QWidget *parent = NULL);
+        ItemDelegate(ClipboardBrowser *view, const ClipboardBrowserSharedPtr &sharedData, QWidget *parent = nullptr);
 
         ~ItemDelegate();
 
         QSize sizeHint(const QModelIndex &index) const;
 
         QSize sizeHint(const QStyleOptionViewItem &option,
-                       const QModelIndex &index) const;
+                       const QModelIndex &index) const override;
 
-        bool eventFilter(QObject *object, QEvent *event);
+        bool eventFilter(QObject *obj, QEvent *event) override;
 
-        /** Remove all cached items (cache is refreshed using paint()). */
+        /** Remove all cached items. */
         void invalidateCache();
+
+        /** Remove cached item. */
+        void invalidateCache(int row);
 
         /** Set regular expression for highlighting. */
         void setSearch(const QRegExp &re);
@@ -84,16 +89,10 @@ class ItemDelegate : public QItemDelegate
         bool hasCache(const QModelIndex &index) const;
 
         /** Set maximum size for all items. */
-        void setItemSizes(const QSize &maxSize, int idealWidth);
+        void setItemSizes(const QSize &size, int idealWidth);
 
         /** Save edited item on return or ctrl+return. */
         void setSaveOnEnterKey(bool enable) { m_saveOnReturnKey = enable; }
-
-        /** Enable/disable font antialiasing. */
-        void setFontAntialiasing(bool enable) { m_antialiasing = enable; }
-
-        /** Update row position. */
-        void updateRowPosition(int row, int y);
 
         /** Show/hide row. */
         void setRowVisible(int row, bool visible);
@@ -105,8 +104,19 @@ class ItemDelegate : public QItemDelegate
         ItemEditorWidget *createCustomEditor(QWidget *parent, const QModelIndex &index,
                                              bool editNotes);
 
-        /** Load settings for @a editor. */
-        void loadEditorSettings(ItemEditorWidget *editor);
+        /**
+         * Highlight matched text with current serch expression, font and color.
+         */
+        void highlightMatches(ItemWidget *itemWidget) const;
+
+        /**
+         * Make item widget static or dynamic.
+         *
+         * Static item widget doesn't receive any mouse events.
+         *
+         * This allows interaction only for current item widget.
+         */
+        void setItemWidgetStatic(const QModelIndex &index, bool isStatic);
 
     public slots:
         void dataChanged(const QModelIndex &a, const QModelIndex &b);
@@ -115,38 +125,19 @@ class ItemDelegate : public QItemDelegate
         void rowsMoved(const QModelIndex &parent, int sourceStart, int sourceEnd,
                        const QModelIndex &destination, int destinationRow);
 
-    signals:
-        /** Emitted if size of a widget has changed. */
-        void rowSizeChanged();
-
     protected:
         void paint(QPainter *painter, const QStyleOptionViewItem &option,
-                   const QModelIndex &index) const;
+                   const QModelIndex &index) const override;
 
     private:
         void setIndexWidget(const QModelIndex &index, ItemWidget *w);
 
-        int rowNumberWidth() const;
-        int rowNumberHeight() const;
-
-        QAbstractItemView *m_view;
-        ItemFactory *m_itemFactory;
+        ClipboardBrowser *m_view;
+        ClipboardBrowserSharedPtr m_sharedData;
         bool m_saveOnReturnKey;
         QRegExp m_re;
         QSize m_maxSize;
         int m_idealWidth;
-        int m_vMargin;
-        int m_hMargin;
-
-        QFont m_foundFont;
-        QPalette m_foundPalette;
-        QFont m_editorFont;
-        QPalette m_editorPalette;
-        QFont m_rowNumberFont;
-        QSize m_rowNumberSize;
-        bool m_showRowNumber;
-        QPalette m_rowNumberPalette;
-        bool m_antialiasing;
 
         QList<ItemWidget*> m_cache;
 };

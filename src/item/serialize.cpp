@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -26,54 +26,53 @@
 #include <QAbstractItemModel>
 #include <QByteArray>
 #include <QDataStream>
-#include <QFile>
+#include <QIODevice>
 #include <QList>
 #include <QObject>
 #include <QPair>
 #include <QStringList>
 
+#include <cstring>
+
 namespace {
 
-typedef QList< QPair<QString, QString> > MimeToCompressed;
-
-void addMime(MimeToCompressed &m, const QString &mime, int value)
+template <typename Fn>
+bool mimeIdApply(Fn fn)
 {
-    const QString num = QString::number(value, 16);
-    Q_ASSERT(num.size() == 1);
-    m.append( QPair<QString, QString>(mime, num) );
-}
+    return fn(1, mimeWindowTitle)
+        || fn(2, mimeItemNotes)
 
-const MimeToCompressed &mimeToCompressedList()
-{
-    static MimeToCompressed m;
-    if ( m.isEmpty() ) {
-        int i = 0;
-        addMime(m, mimeWindowTitle, ++i);
-        addMime(m, mimeItemNotes, ++i);
+        || fn(3, COPYQ_MIME_PREFIX)
 
-        addMime(m, COPYQ_MIME_PREFIX, ++i);
+        || fn(4, mimeText)
+        || fn(5, mimeHtml)
+        || fn(6, mimeUriList)
 
-        addMime(m, mimeText, ++i);
-        addMime(m, mimeHtml, ++i);
-        addMime(m, mimeUriList, ++i);
-
-        addMime(m, "image/", ++i);
-        addMime(m, "text/", ++i);
-        addMime(m, "application/", ++i);
-        addMime(m, "audio/", ++i);
-        addMime(m, "video/", ++i);
-    }
-    return m;
+        || fn(7, "image/")
+        || fn(8, "text/")
+        || fn(9, "application/")
+        || fn(10, "audio/")
+        || fn(11, "video/");
 }
 
 QString decompressMime(const QString &mime)
 {
-    const QString num = mime.mid(0, 1);
-    const MimeToCompressed &m = mimeToCompressedList();
-    for ( MimeToCompressed::const_iterator it = m.begin(); it != m.end(); ++it ) {
-        if (num == it->second)
-            return it->first + mime.mid(1);
-    }
+    bool ok;
+    const int id = mime.mid(0, 1).toInt(&ok, 16);
+    Q_ASSERT(ok);
+
+    QString decompressedMimePrefix;
+    const bool found = mimeIdApply(
+        [id, &decompressedMimePrefix](int mimeId, const char *mimePrefix) {
+            if (id == mimeId) {
+                decompressedMimePrefix = mimePrefix;
+                return true;
+            }
+            return false;
+        });
+
+    if (found)
+        return decompressedMimePrefix + mime.mid(1);
 
     Q_ASSERT( mime.startsWith("0") );
     return mime.mid(1);
@@ -81,11 +80,20 @@ QString decompressMime(const QString &mime)
 
 QString compressMime(const QString &mime)
 {
-    const MimeToCompressed &m = mimeToCompressedList();
-    for ( MimeToCompressed::const_iterator it = m.begin(); it != m.end(); ++it ) {
-        if ( mime.startsWith(it->first) )
-            return it->second + mime.mid( it->first.size() );
-    }
+    QString compressedMime;
+    const bool found = mimeIdApply(
+        [&mime, &compressedMime](int mimeId, const char *mimePrefix) {
+            if ( mime.startsWith(mimePrefix) ) {
+                const auto prefixSize = static_cast<int>( strlen(mimePrefix) );
+                compressedMime = QString::number(mimeId, 16) + mime.mid(prefixSize);
+                return true;
+            }
+            return false;
+        });
+
+    if (found)
+        return compressedMime;
+
     return "0" + mime;
 }
 
@@ -129,7 +137,7 @@ void serializeData(QDataStream *stream, const QVariantMap &data)
     *stream << size;
 
     QByteArray bytes;
-    foreach (const QString &mime, data.keys()) {
+    for (const auto &mime : data.keys()) {
         bytes = data[mime].toByteArray();
         bool compress = shouldCompress(bytes, mime);
         *stream << compressMime(mime) << compress << ( compress ? qCompress(bytes) : bytes );
@@ -202,7 +210,7 @@ bool serializeData(const QAbstractItemModel &model, QDataStream *stream)
     return stream->status() == QDataStream::Ok;
 }
 
-bool deserializeData(QAbstractItemModel *model, QDataStream *stream)
+bool deserializeData(QAbstractItemModel *model, QDataStream *stream, int maxItems)
 {
     qint32 length;
     *stream >> length;
@@ -216,9 +224,7 @@ bool deserializeData(QAbstractItemModel *model, QDataStream *stream)
     }
 
     // Limit the loaded number of items to model's maximum.
-    const QVariant maxItems = model->property("maxItems");
-    Q_ASSERT( maxItems.isValid() );
-    length = qMin( length, maxItems.toInt() ) - model->rowCount();
+    length = qMin(length, maxItems) - model->rowCount();
 
     if ( length != 0 && !model->insertRows(0, length) )
         return false;
@@ -232,15 +238,15 @@ bool deserializeData(QAbstractItemModel *model, QDataStream *stream)
     return stream->status() == QDataStream::Ok;
 }
 
-bool serializeData(const QAbstractItemModel &model, QFile *file)
+bool serializeData(const QAbstractItemModel &model, QIODevice *file)
 {
     QDataStream stream(file);
     stream.setVersion(QDataStream::Qt_4_7);
     return serializeData(model, &stream);
 }
 
-bool deserializeData(QAbstractItemModel *model, QFile *file)
+bool deserializeData(QAbstractItemModel *model, QIODevice *file, int maxItems)
 {
     QDataStream stream(file);
-    return deserializeData(model, &stream);
+    return deserializeData(model, &stream, maxItems);
 }

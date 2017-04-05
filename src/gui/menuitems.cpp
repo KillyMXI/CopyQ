@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,7 +19,7 @@
 
 #include "menuitems.h"
 
-#include "common/common.h"
+#include "common/shortcuts.h"
 #include "gui/icons.h"
 
 #include <QStringList>
@@ -59,9 +59,9 @@ MenuItems menuItems()
     MenuItems items;
     addMenuItem( items, Actions::File_New, QObject::tr("&New Item"), "new", QKeySequence::New,
                   "document-new", IconFileAlt );
-    addMenuItem( items, Actions::File_ImportTab, QObject::tr("&Import Tab..."), "import_tab", QObject::tr("Ctrl+I"),
+    addMenuItem( items, Actions::File_Import, QObject::tr("&Import..."), "import", QObject::tr("Ctrl+I"),
                   "document-open", IconFolderOpen );
-    addMenuItem( items, Actions::File_ExportTab, QObject::tr("&Export Tab..."), "export_tab", QKeySequence::Save,
+    addMenuItem( items, Actions::File_Export, QObject::tr("&Export..."), "export", QKeySequence::Save,
                   "document-save", IconSave );
     addMenuItem( items, Actions::File_Preferences, QObject::tr("&Preferences..."), "preferences", QObject::tr("Ctrl+P"),
                   "preferences-other", IconWrench );
@@ -99,6 +99,8 @@ MenuItems menuItems()
                   "move_to_clipboard", QKeySequence(), "clipboard", IconPaste );
     addMenuItem( items, Actions::Item_ShowContent, QObject::tr("&Show Content..."),
                   "show_item_content", QObject::tr("F4"), "dialog-information", IconInfoSign );
+    addMenuItem( items, Actions::Item_ShowPreview, QObject::tr("&Show Preview"),
+                 "show_item_preview", QObject::tr("F7"), "document-print-preview", IconEyeOpen );
     addMenuItem( items, Actions::Item_Remove, QObject::tr("&Remove"),
                   "delete_item",  shortcutToRemove(), "list-remove", IconRemove );
     addMenuItem( items, Actions::Item_Edit, QObject::tr("&Edit"), "edit", QObject::tr("F2"),
@@ -144,15 +146,14 @@ MenuItems menuItems()
     return items;
 }
 
-void loadShortcuts(MenuItems *items, QSettings &settings)
+void loadShortcuts(MenuItems *items, const QSettings &settings)
 {
-    for (int i = 0; i < items->size(); ++i) {
-        MenuItem &item = (*items)[i];
+    for (auto &item : *items) {
         if ( !item.settingsKey.isEmpty() ) {
             const QVariant shortcutNames = settings.value(item.settingsKey);
             if ( shortcutNames.isValid() ) {
                 item.shortcuts.clear();
-                foreach ( const QString &shortcut, shortcutNames.toStringList() )
+                for ( const auto &shortcut : shortcutNames.toStringList() )
                     item.shortcuts.append(shortcut);
             }
         }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,12 +21,13 @@
 #include "ui_addcommanddialog.h"
 
 #include "common/command.h"
-#include "common/common.h"
 #include "common/mimetypes.h"
+#include "common/shortcuts.h"
 #include "item/itemfactory.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
 #include "gui/windowgeometryguard.h"
+#include "platform/platformnativeinterface.h"
 
 #include <QAbstractListModel>
 #include <QSortFilterProxyModel>
@@ -125,7 +126,8 @@ void createGlobalShortcut(GlobalAction id, QList<Command> *commands)
 
 QList<Command> defaultCommands()
 {
-    static const QRegExp reURL("^(https?|ftps?|file)://");
+    const QRegExp reURL("^(https?|ftps?|file)://");
+    const QRegExp reNotURL("^(?!(http|ftp)s?://)");
 
     QList<Command> commands;
     Command *c;
@@ -229,20 +231,21 @@ QList<Command> defaultCommands()
 
     c = newCommand(&commands);
     c->name = AddCommandDialog::tr("Ignore copied files");
+    c->re   = reNotURL;
     c->icon = QString(QChar(IconExclamationSign));
     c->input = mimeUriList;
     c->remove = true;
     c->automatic = true;
 
-#if defined(COPYQ_WS_X11) || defined(Q_OS_WIN) || defined(Q_OS_MAC)
-    c = newCommand(&commands);
-    c->name = AddCommandDialog::tr("Ignore *\"Password\"* window");
-    c->wndre = QRegExp(AddCommandDialog::tr("Password"));
-    c->icon = QString(QChar(IconAsterisk));
-    c->remove = true;
-    c->automatic = true;
-    c->cmd = "copyq ignore";
-#endif
+    if ( createPlatformNativeInterface()->canGetWindowTitle() ) {
+        c = newCommand(&commands);
+        c->name = AddCommandDialog::tr("Ignore *\"Password\"* window");
+        c->wndre = QRegExp(AddCommandDialog::tr("Password"));
+        c->icon = QString(QChar(IconAsterisk));
+        c->remove = true;
+        c->automatic = true;
+        c->cmd = "copyq ignore";
+    }
 
     c = newCommand(&commands);
     c->name = AddCommandDialog::tr("Move to Trash");
@@ -257,18 +260,18 @@ QList<Command> defaultCommands()
 
 class CommandModel : public QAbstractListModel {
 public:
-    explicit CommandModel(const QList<Command> &commands, QObject *parent = NULL)
+    explicit CommandModel(const QList<Command> &commands, QObject *parent = nullptr)
         : QAbstractListModel(parent)
         , m_commands(commands)
     {
     }
 
-    int rowCount(const QModelIndex &) const
+    int rowCount(const QModelIndex &) const override
     {
         return m_commands.size();
     }
 
-    QVariant data(const QModelIndex &index, int role) const
+    QVariant data(const QModelIndex &index, int role) const override
     {
         if (!index.isValid())
             return QVariant();
@@ -328,7 +331,7 @@ void AddCommandDialog::accept()
     if (!indexes.isEmpty()) {
         QList<Command> commands;
 
-        foreach (const QModelIndex &index, indexes)
+        for (const auto &index : indexes)
             commands.append( index.data(Qt::UserRole).value<Command>() );
 
         emit addCommands(commands);

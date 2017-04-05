@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -51,10 +51,15 @@ enum {
 
     hasText,
     hasHtml,
-    hasNotes,
     text,
     html,
-    notes
+    notes,
+
+    /// Item color (string expression as used in themes).
+    color,
+
+    /// If true, hide content of item (not notes, tags etc.).
+    isHidden
 };
 
 }

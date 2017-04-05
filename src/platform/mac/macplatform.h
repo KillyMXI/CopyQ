@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,8 +22,8 @@
 
 #include "platform/platformnativeinterface.h"
 
-class QApplication;
-class QCoreApplication;
+#include <QKeyEvent>
+#include <QString>
 
 class MacPlatform : public PlatformNativeInterface
 {
@@ -33,9 +33,12 @@ public:
     PlatformWindowPtr getWindow(WId winId);
     PlatformWindowPtr getCurrentWindow();
 
+    bool canGetWindowTitle() { return true; }
     bool canAutostart() { return true; }
     bool isAutostartEnabled();
     void setAutostartEnabled(bool);
+
+    QCoreApplication *createConsoleApplication(int &argc, char **argv);
 
     QApplication *createServerApplication(int &argc, char **argv);
 
@@ -46,6 +49,18 @@ public:
     void loadSettings() {}
 
     PlatformClipboardPtr clipboard();
+
+    int keyCode(const QKeyEvent &event) { return event.key(); }
+
+    QStringList getCommandLineArguments(int argc, char **argv);
+
+    bool findPluginDir(QDir *pluginsDir);
+
+    QString defaultEditorCommand();
+
+    QString translationPrefix();
+
+    QString themePrefix() { return QString(); }
 };
 
 #endif // MACPLATFORM_H

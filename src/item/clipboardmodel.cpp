@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,6 +24,9 @@
 
 #include <QStringList>
 
+#include <algorithm>
+#include <functional>
+
 namespace {
 
 QList<QPersistentModelIndex> validIndeces(const QModelIndexList &indexList)
@@ -31,7 +34,7 @@ QList<QPersistentModelIndex> validIndeces(const QModelIndexList &indexList)
     QList<QPersistentModelIndex> list;
     list.reserve(indexList.size());
 
-    foreach (const QModelIndex &index, indexList) {
+    for (const auto &index : indexList) {
         if ( index.isValid() )
             list.append(index);
     }
@@ -43,7 +46,7 @@ int topMostRow(const QList<QPersistentModelIndex> &indexList)
 {
     int row = indexList.value(0).row();
 
-    foreach (const QPersistentModelIndex &index, indexList)
+    for (const auto &index : indexList)
         row = qMin(row, index.row());
 
     return row;
@@ -51,12 +54,21 @@ int topMostRow(const QList<QPersistentModelIndex> &indexList)
 
 } // namespace
 
+void ClipboardItemList::move(int from, int count, int to)
+{
+    if (to < from) {
+        std::swap(from, to);
+        ++to;
+    }
+
+    const auto start = std::begin(m_items) + from;
+    const auto end = start + count;
+    const auto dest = std::begin(m_items) + to;
+    std::rotate(start, end, dest);
+}
+
 ClipboardModel::ClipboardModel(QObject *parent)
     : QAbstractListModel(parent)
-    , m_max(100)
-    , m_clipboardList(m_max)
-    , m_disabled(false)
-    , m_tabName()
 {
 }
 
@@ -159,6 +171,27 @@ bool ClipboardModel::removeRows(int position, int rows, const QModelIndex&)
     return true;
 }
 
+bool ClipboardModel::moveRows(
+        const QModelIndex &sourceParent, int sourceRow, int rows,
+        const QModelIndex &destinationParent, int destinationRow)
+{
+    if (sourceParent.isValid() || destinationParent.isValid())
+        return false;
+
+    if (sourceRow < 0 || destinationRow < 0 || rows <= 0 || sourceRow + rows > rowCount())
+        return false;
+
+    const int last = sourceRow + rows - 1;
+    if (sourceRow <= destinationRow && destinationRow <= last)
+        return false;
+
+    beginMoveRows(sourceParent, sourceRow, last, destinationParent, destinationRow);
+    m_clipboardList.move(sourceRow, rows, destinationRow);
+    endMoveRows();
+
+    return true;
+}
+
 int ClipboardModel::getRowNumber(int row, bool cycle) const
 {
     int n = rowCount();
@@ -172,36 +205,6 @@ int ClipboardModel::getRowNumber(int row, bool cycle) const
         return cycle ? n - 1 : 0;
 
     return row;
-}
-
-void ClipboardModel::unloadItems()
-{
-    emit unloaded();
-    removeRows(0, rowCount());
-}
-
-void ClipboardModel::setMaxItems(int max)
-{
-    m_max = qMax(0, max);
-
-    if ( m_max < m_clipboardList.size() ) {
-        beginRemoveRows(QModelIndex(), m_max + 1, m_clipboardList.size() - 1);
-        m_clipboardList.resize(m_max);
-        endRemoveRows();
-    } else {
-        m_clipboardList.reserve(m_max);
-    }
-}
-
-void ClipboardModel::setTabName(const QString &tabName)
-{
-    Q_ASSERT( !tabName.isEmpty() );
-
-    if (m_tabName == tabName)
-        return;
-
-    m_tabName = tabName;
-    emit tabNameChanged(m_tabName);
 }
 
 bool ClipboardModel::move(int pos, int newpos)
@@ -227,18 +230,18 @@ bool ClipboardModel::move(int pos, int newpos)
     return true;
 }
 
-bool ClipboardModel::moveItemsWithKeyboard(QModelIndexList indexList, int key, int count) {
+bool ClipboardModel::moveItemsWithKeyboard(const QModelIndexList &indexList, int key, int count) {
     int from, to;
     bool res = false;
 
     QList<int> list;
-    for ( int i = 0; i < indexList.length(); ++i )
-        list.append( indexList.at(i).row() );
+    for (const auto &i : indexList)
+        list.append( i.row() );
 
     if ( key == Qt::Key_Down || key == Qt::Key_End )
-        qSort( list.begin(), list.end(), qGreater<int>() );
+        std::sort( list.begin(), list.end(), std::greater<int>() );
     else
-        qSort( list.begin(), list.end(), qLess<int>() );
+        std::sort( list.begin(), list.end(), std::less<int>() );
 
     for ( int i = 0, d = 0; i<list.length(); ++i ) {
         from = list.at(i) + d;
@@ -275,11 +278,11 @@ bool ClipboardModel::moveItemsWithKeyboard(QModelIndexList indexList, int key, i
 void ClipboardModel::sortItems(const QModelIndexList &indexList, CompareItems *compare)
 {
     QList<QPersistentModelIndex> list = validIndeces(indexList);
-    qSort( list.begin(), list.end(), compare );
+    std::sort( list.begin(), list.end(), compare );
 
     int targetRow = topMostRow(list);
 
-    foreach (const QPersistentModelIndex &ind, list) {
+    for (const auto &ind : list) {
         if (ind.isValid()) {
             const int sourceRow = ind.row();
 
@@ -299,10 +302,10 @@ void ClipboardModel::sortItems(const QModelIndexList &indexList, CompareItems *c
     }
 }
 
-int ClipboardModel::findItem(uint item_hash) const
+int ClipboardModel::findItem(uint itemHash) const
 {
     for (int i = 0; i < m_clipboardList.size(); ++i) {
-        if ( m_clipboardList[i].dataHash() == item_hash )
+        if ( m_clipboardList[i].dataHash() == itemHash )
             return i;
     }
 

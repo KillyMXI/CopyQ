@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,7 +24,6 @@
 #include <QAction>
 #include <QLineEdit>
 #include <QMoveEvent>
-#include <QPointer>
 
 namespace {
 
@@ -38,12 +37,12 @@ public:
     {
     }
 
-    int rowCount(const QModelIndex &parent = QModelIndex()) const
+    int rowCount(const QModelIndex &parent = QModelIndex()) const override
     {
         return parent.isValid() ? 0 : m_items.size();
     }
 
-    QVariant data(const QModelIndex &index, int role) const
+    QVariant data(const QModelIndex &index, int role) const override
     {
         if (index.isValid() && (role == Qt::EditRole || role == Qt::DisplayRole))
             return m_items[index.row()];
@@ -51,7 +50,7 @@ public:
         return QVariant();
     }
 
-    bool setData(const QModelIndex &index, const QVariant &value, int role)
+    bool setData(const QModelIndex &index, const QVariant &value, int role) override
     {
         if (!index.isValid() && role == Qt::EditRole) {
             const QString text = value.toString();
@@ -63,13 +62,14 @@ public:
         return false;
     }
 
-    bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex())
+    bool removeRows(int row, int count, const QModelIndex &parent = QModelIndex()) override
     {
-        if ( parent.isValid() || row < 0 || row + count > rowCount() )
+        const auto end = row + count;
+        if ( parent.isValid() || row < 0 || end > rowCount() )
             return false;
 
-        beginRemoveRows(QModelIndex(), row, row + count);
-        m_items.erase( m_items.begin() + row, m_items.begin() + row + count );
+        beginRemoveRows(QModelIndex(), row, end);
+        m_items.erase( m_items.begin() + row, m_items.begin() + end );
         endRemoveRows();
 
         return true;
@@ -113,7 +113,7 @@ void FilterCompleter::installCompleter(QLineEdit *lineEdit)
 
 void FilterCompleter::removeCompleter(QLineEdit *lineEdit)
 {
-    lineEdit->setCompleter(NULL);
+    lineEdit->setCompleter(nullptr);
 }
 
 QStringList FilterCompleter::history() const
@@ -171,7 +171,7 @@ FilterCompleter::FilterCompleter(QLineEdit *lineEdit)
 
     QWidget *window = lineEdit->window();
     if (window) {
-        QAction *act = new QAction(this);
+        auto act = new QAction(this);
         act->setShortcut(tr("Alt+Down", "Filter completion shortcut"));
         connect(act, SIGNAL(triggered()), this, SLOT(onComplete()));
         window->addAction(act);

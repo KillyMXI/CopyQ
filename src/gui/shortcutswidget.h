@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,7 +21,6 @@
 #define SHORTCUTSWIDGET_H
 
 #include <QIcon>
-#include <QSharedPointer>
 #include <QTimer>
 #include <QVector>
 #include <QWidget>
@@ -36,11 +35,11 @@ class QTableWidgetItem;
 
 struct MenuAction {
     QString iconName;
-    ushort iconId;
+    ushort iconId{};
     QString text;
     QString settingsKey;
-    QTableWidgetItem *tableItem;
-    ShortcutButton *shortcutButton;
+    QTableWidgetItem *tableItem{};
+    ShortcutButton *shortcutButton{};
 };
 
 /**
@@ -51,17 +50,17 @@ class ShortcutsWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit ShortcutsWidget(QWidget *parent = NULL);
+    explicit ShortcutsWidget(QWidget *parent = nullptr);
 
     ~ShortcutsWidget();
 
     /** Load shortcuts from settings file. */
-    void loadShortcuts(QSettings &settings);
+    void loadShortcuts(const QSettings &settings);
     /** Save shortcuts to settings file. */
-    void saveShortcuts(QSettings &settings) const;
+    void saveShortcuts(QSettings *settings) const;
 
 protected:
-    void showEvent(QShowEvent *event);
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void onShortcutAdded(const QKeySequence &shortcut);

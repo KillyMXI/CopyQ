@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -61,9 +61,7 @@ void ScriptableClassBase::init(QObject *prototype)
     proto = engine()->newQObject(
                 prototype,
                 QScriptEngine::QtOwnership,
-                QScriptEngine::SkipMethodsInEnumeration
-                | QScriptEngine::ExcludeSuperClassMethods
-                | QScriptEngine::ExcludeSuperClassProperties);
+                QScriptEngine::SkipMethodsInEnumeration);
     QScriptValue global = engine()->globalObject();
     proto.setPrototype(global.property("Object").property("prototype"));
 

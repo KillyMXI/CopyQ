@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -47,17 +47,21 @@ class ClipboardClient : public Client, public App
     Q_OBJECT
 
 public:
-    ClipboardClient(int &argc, char **argv,
-                    int skipArgc = 0, const QString &sessionName = QString());
+    ClipboardClient(
+            int &argc, char **argv, int skipArgc, const QString &sessionName);
 
 private slots:
-    void onMessageReceived(const QByteArray &data, int messageCode);
+    void onMessageReceived(const QByteArray &data, int messageCode) override;
 
-    void onDisconnected();
+    void onDisconnected() override;
+
+    void onConnectionFailed() override;
 
     void setInput(const QByteArray &input);
 
     void sendInput();
+
+    void exit(int exitCode) override;
 
 private:
     void startInputReader();

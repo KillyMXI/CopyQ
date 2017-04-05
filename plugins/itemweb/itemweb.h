@@ -23,7 +23,6 @@
 #include "gui/icons.h"
 #include "item/itemwidget.h"
 
-#include <QScopedPointer>
 #include <QVariantMap>
 
 #if QT_VERSION < 0x050000
@@ -31,6 +30,8 @@
 #else
 #   include <QtWebKitWidgets/QWebView>
 #endif
+
+#include <memory>
 
 namespace Ui {
 class ItemWebSettings;
@@ -41,23 +42,23 @@ class ItemWeb : public QWebView, public ItemWidget
     Q_OBJECT
 
 public:
-    ItemWeb(const QString &html, int maximumHeight, QWidget *parent);
+    ItemWeb(const QString &html, int maximumHeight, bool preview, QWidget *parent);
 
 protected:
     void highlight(const QRegExp &re, const QFont &highlightFont,
-                   const QPalette &highlightPalette);
+                   const QPalette &highlightPalette) override;
 
-    virtual void updateSize(const QSize &maximumSize, int idealWidth);
+    void updateSize(const QSize &maximumSize, int idealWidth) override;
 
-    virtual void mousePressEvent(QMouseEvent *e);
+    void mousePressEvent(QMouseEvent *e) override;
 
-    virtual void mouseMoveEvent(QMouseEvent *e);
+    void mouseMoveEvent(QMouseEvent *e) override;
 
-    virtual void wheelEvent(QWheelEvent *e);
+    void wheelEvent(QWheelEvent *e) override;
 
-    virtual void mouseReleaseEvent(QMouseEvent *e);
+    void mouseReleaseEvent(QMouseEvent *e) override;
 
-    virtual void mouseDoubleClickEvent(QMouseEvent *e);
+    void mouseDoubleClickEvent(QMouseEvent *e) override;
 
 private slots:
     void onSelectionChanged();
@@ -70,6 +71,7 @@ private:
     bool m_copyOnMouseUp;
     int m_maximumHeight;
     QSize m_maximumSize;
+    bool m_preview;
 };
 
 class ItemWebLoader : public QObject, public ItemLoaderInterface
@@ -82,27 +84,27 @@ public:
     ItemWebLoader();
     ~ItemWebLoader();
 
-    virtual ItemWidget *create(const QModelIndex &index, QWidget *parent) const;
+    ItemWidget *create(const QModelIndex &index, QWidget *parent, bool preview) const override;
 
-    virtual int priority() const { return 10; }
+    int priority() const override { return 10; }
 
-    virtual QString id() const { return "itemweb"; }
-    virtual QString name() const { return tr("Web"); }
-    virtual QString author() const { return QString(); }
-    virtual QString description() const { return tr("Display web pages."); }
-    virtual QVariant icon() const { return QVariant(IconGlobe); }
+    QString id() const override { return "itemweb"; }
+    QString name() const override { return tr("Web"); }
+    QString author() const override { return QString(); }
+    QString description() const override { return tr("Display web pages."); }
+    QVariant icon() const override { return QVariant(IconGlobe); }
 
-    virtual QStringList formatsToSave() const;
+    QStringList formatsToSave() const override;
 
-    virtual QVariantMap applySettings();
+    QVariantMap applySettings() override;
 
-    virtual void loadSettings(const QVariantMap &settings) { m_settings = settings; }
+    void loadSettings(const QVariantMap &settings) override { m_settings = settings; }
 
-    virtual QWidget *createSettingsWidget(QWidget *parent);
+    QWidget *createSettingsWidget(QWidget *parent) override;
 
 private:
     QVariantMap m_settings;
-    QScopedPointer<Ui::ItemWebSettings> ui;
+    std::unique_ptr<Ui::ItemWebSettings> ui;
 };
 
 #endif // ITEMWEB_H

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,7 +23,7 @@
 #include "item/clipboarditem.h"
 
 #include <QAbstractListModel>
-#include <QVector>
+#include <QList>
 
 /**
  * Container with clipboard items.
@@ -32,29 +32,26 @@
  */
 class ClipboardItemList {
 public:
-    explicit ClipboardItemList(int maxItems)
-    {
-        reserve(maxItems);
-    }
-
     ClipboardItem &operator [](int i)
     {
-        return m_items[toIndex(i)];
+        return m_items[i];
     }
 
     const ClipboardItem &operator [](int i) const
     {
-        return m_items[toIndex(i)];
+        return m_items[i];
     }
 
     void insert(int row, const ClipboardItem &item)
     {
-        m_items.insert(toIndex(row) + 1, item);
+        m_items.insert(row, item);
     }
 
     void remove(int row, int count)
     {
-        m_items.remove(toIndex(row) + 1 - count, count);
+        const QList<ClipboardItem>::iterator from = m_items.begin() + row;
+        const QList<ClipboardItem>::iterator to = from + count;
+        m_items.erase(from, to);
     }
 
     int size() const
@@ -64,12 +61,12 @@ public:
 
     void move(int from, int to)
     {
-        const int from2 = toIndex(from);
-        const int to2 = toIndex(to);
-        const ClipboardItem item = m_items[from2];
-        m_items.remove(from2);
-        m_items.insert(to2, item);
+        const ClipboardItem item = m_items[from];
+        m_items.removeAt(from);
+        m_items.insert(to, item);
     }
+
+    void move(int from, int count, int to);
 
     void reserve(int maxItems)
     {
@@ -78,16 +75,15 @@ public:
 
     void resize(int size)
     {
-        m_items.resize(size);
+        if (size < this->size())
+            remove(size, this->size());
+
+        while (size > this->size())
+            m_items.append(ClipboardItem());
     }
 
 private:
-    int toIndex(int row) const
-    {
-        return size() - row - 1;
-    }
-
-    QVector<ClipboardItem> m_items;
+    QList<ClipboardItem> m_items;
 };
 
 /**
@@ -101,55 +97,38 @@ private:
 class ClipboardModel : public QAbstractListModel
 {
     Q_OBJECT
-    Q_PROPERTY(int maxItems READ maxItems WRITE setMaxItems)
-    Q_PROPERTY(bool disabled READ isDisabled WRITE setDisabled)
-    Q_PROPERTY(QString tabName READ tabName WRITE setTabName NOTIFY tabNameChanged)
 
 public:
     /** Return true if @a lhs is less than @a rhs. */
-    typedef bool CompareItems(const QModelIndex &lhs, const QModelIndex &rhs);
+    using CompareItems = bool (const QModelIndex &, const QModelIndex &);
 
-    explicit ClipboardModel(QObject *parent = NULL);
+    explicit ClipboardModel(QObject *parent = nullptr);
 
     /** Return number of items in model. */
-    int rowCount(const QModelIndex &parent = QModelIndex()) const;
+    int rowCount(const QModelIndex &parent = QModelIndex()) const override;
 
     /** Return data for given @a index. */
-    QVariant data(const QModelIndex &index, int role) const;
+    QVariant data(const QModelIndex &index, int role) const override;
 
     /** Return flags for given @a index. */
-    Qt::ItemFlags flags(const QModelIndex &index) const;
+    Qt::ItemFlags flags(const QModelIndex &index) const override;
 
     bool setData(const QModelIndex &index, const QVariant &value,
-                 int role = Qt::EditRole);
+                 int role = Qt::EditRole) override;
     bool insertRows(int position, int rows,
-                    const QModelIndex &index = QModelIndex());
+                    const QModelIndex &index = QModelIndex()) override;
     bool removeRows(int position, int rows,
-                    const QModelIndex &index = QModelIndex());
+                    const QModelIndex &index = QModelIndex()) override;
+    bool moveRows(const QModelIndex &sourceParent, int sourceRow, int rows,
+            const QModelIndex &destinationParent, int destinationRow)
+#if QT_VERSION < 0x050000
+        ;
+#else
+        override;
+#endif
 
     /** insert new item to model. */
     void insertItem(const QVariantMap &data, int row);
-
-    /**
-     * Set maximum number of items in model.
-     *
-     * If there are too many items last item is removed until @a max is less or
-     * equal to number of items in model.
-     */
-    void setMaxItems(int max);
-
-    /** Return maximum number of items in model. */
-    int maxItems() const { return m_max; }
-
-    /** Disabled model shouldn't be changed until loaded. */
-    bool isDisabled() const { return m_disabled; }
-
-    void setDisabled(bool disabled) { m_disabled = disabled; }
-
-    /** Tab name associated with model. */
-    const QString &tabName() const { return m_tabName; }
-
-    void setTabName(const QString &tabName);
 
     /**
      * Move an item.
@@ -164,7 +143,7 @@ public:
      * @return True only if all items was successfully moved.
      */
     bool moveItemsWithKeyboard(
-            QModelIndexList list, //!< Indexed of items to move.
+            const QModelIndexList &indexList, //!< Indexed of items to move.
             int key,
             /*!< Key representing direction for movement (can be one of
              *   Qt::Key_Down, Qt::Key_Up, Qt::Key_End, Qt::Key_Home).
@@ -181,7 +160,7 @@ public:
      * Find item with given @a hash.
      * @return Row number with found item or -1 if no item was found.
      */
-    int findItem(uint hash) const;
+    int findItem(uint itemHash) const;
 
     /**
      * Return row index for given @a row.
@@ -194,18 +173,13 @@ public:
      */
     int getRowNumber(int row, bool cycle = false) const;
 
-    /** Emit unloaded() and unload (remove) all items. */
-    void unloadItems();
-
-signals:
-    void unloaded();
-    void tabNameChanged(const QString &tabName);
+public slots:
+#if QT_VERSION < 0x050000
+    void moveRow(int from, int to) { moveRows(QModelIndex(), from, 1, QModelIndex(), to); }
+#endif
 
 private:
-    int m_max;
     ClipboardItemList m_clipboardList;
-    bool m_disabled;
-    QString m_tabName;
 };
 
 #endif // CLIPBOARDMODEL_H

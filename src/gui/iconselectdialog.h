@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -30,12 +30,12 @@ class IconSelectDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit IconSelectDialog(const QString &defaultIcon, QWidget *parent = NULL);
+    explicit IconSelectDialog(const QString &defaultIcon, QWidget *parent = nullptr);
 
     const QString &selectedIcon() const { return m_selectedIcon; }
 
 public slots:
-    void done(int result);
+    void done(int result) override;
 
 signals:
     void iconSelected(const QString &icon);
@@ -48,6 +48,9 @@ private slots:
     void onAcceptCurrent();
 
 private:
+    void addIcons();
+    void addIcon(ushort unicode);
+
     QListWidget *m_iconList;
     QString m_selectedIcon;
 };

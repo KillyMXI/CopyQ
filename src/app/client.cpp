@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -25,53 +25,37 @@
 
 #include <QCoreApplication>
 #include <QDataStream>
-#include <QLocalSocket>
-#include <QThread>
 
 Client::Client(QObject *parent)
     : QObject(parent)
+    , m_socket(nullptr)
 {
 }
 
 void Client::sendMessage(const QByteArray &message, int messageCode)
 {
-    emit sendMessageRequest(message, messageCode);
+    m_socket->sendMessage(message, messageCode);
 }
 
-bool Client::startClientSocket(const QString &serverName, int argc, char **argv, int skipArgc)
+void Client::startClientSocket(const QString &serverName, int argc, char **argv, int skipArgc, int messageCode)
 {
-    QLocalSocket *localSocket = new QLocalSocket(this);
-    localSocket->connectToServer(serverName);
-    if ( !localSocket->waitForConnected(4000) )
-        return false;
-
     Arguments arguments(
                 createPlatformNativeInterface()->getCommandLineArguments(argc, argv)
                 .mid(skipArgc) );
 
-    ClientSocket *socket = new ClientSocket(localSocket);
+    m_socket = new ClientSocket(serverName, this);
 
-    QThread *t = new QThread;
-    connect(socket, SIGNAL(destroyed()), t, SLOT(quit()));
-    connect(t, SIGNAL(finished()), t, SLOT(deleteLater()));
-    socket->moveToThread(t);
-    t->start();
-
-    connect( socket, SIGNAL(messageReceived(QByteArray,int)),
+    connect( m_socket, SIGNAL(messageReceived(QByteArray,int)),
              this, SLOT(onMessageReceived(QByteArray,int)) );
-    connect( socket, SIGNAL(disconnected()),
+    connect( m_socket, SIGNAL(disconnected()),
              this, SLOT(onDisconnected()) );
-    connect( qApp, SIGNAL(aboutToQuit()),
-             socket, SLOT(deleteAfterDisconnected()) );
-    connect( this, SIGNAL(sendMessageRequest(QByteArray,int)),
-             socket, SLOT(sendMessage(QByteArray,int)) );
+    connect( m_socket, SIGNAL(connectionFailed()),
+             this, SLOT(onConnectionFailed()) );
+
+    m_socket->start();
 
     QByteArray msg;
     QDataStream out(&msg, QIODevice::WriteOnly);
     out << arguments;
-    sendMessage(msg, 0);
-
-    socket->start();
-
-    return true;
+    sendMessage(msg, messageCode);
 }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -27,8 +27,13 @@
 
 #include <QAbstractItemModel>
 #include <QAction>
+#include <QColorDialog>
+#include <QFontDialog>
 #include <QIcon>
 #include <QPlainTextEdit>
+#include <QTextCharFormat>
+#include <QTextCursor>
+#include <QTextDocument>
 #include <QToolBar>
 #include <QVBoxLayout>
 
@@ -36,8 +41,22 @@ namespace {
 
 const QIcon iconSave() { return getIcon("document-save", IconSave); }
 const QIcon iconCancel() { return getIcon("document-revert", IconRemove); }
+
 const QIcon iconUndo() { return getIcon("edit-undo", IconUndo); }
 const QIcon iconRedo() { return getIcon("edit-redo", IconRepeat); }
+
+const QIcon iconFont() { return getIcon("preferences-desktop-font", IconFont); }
+const QIcon iconBold() { return getIcon("format-text-bold", IconBold); }
+const QIcon iconItalic() { return getIcon("format-text-italic", IconItalic); }
+const QIcon iconUnderline() { return getIcon("format-text-underline", IconUnderline); }
+const QIcon iconStrikethrough() { return getIcon("format-text-strikethrough", IconStrikethrough); }
+
+const QIcon iconForeground() { return getIcon(IconSquareO); }
+const QIcon iconBackground() { return getIcon(IconSquare); }
+
+const QIcon iconEraseStyle() { return getIcon(IconEraser); }
+
+const QIcon iconSearch() { return getIcon("edit-find", IconSearch); }
 
 } // namespace
 
@@ -46,21 +65,21 @@ ItemEditorWidget::ItemEditorWidget(ItemWidget *itemWidget, const QModelIndex &in
     : QWidget(parent)
     , m_itemWidget(itemWidget)
     , m_index(index)
-    , m_editor(NULL)
-    , m_noteEditor(NULL)
-    , m_toolBar(NULL)
+    , m_editor(nullptr)
+    , m_noteEditor(nullptr)
+    , m_toolBar(nullptr)
     , m_saveOnReturnKey(false)
 {
-    m_noteEditor = editNotes ? new QPlainTextEdit(parent) : NULL;
+    m_noteEditor = editNotes ? new QPlainTextEdit(parent) : nullptr;
     QWidget *editor = editNotes ? m_noteEditor : createEditor(itemWidget);
 
-    if (editor == NULL) {
-        m_itemWidget = NULL;
+    if (editor == nullptr) {
+        m_itemWidget = nullptr;
     } else {
         connect( m_itemWidget->widget(), SIGNAL(destroyed()),
                  this, SLOT(onItemWidgetDestroyed()) );
         initEditor(editor);
-        if (m_noteEditor != NULL)
+        if (m_noteEditor != nullptr)
             m_noteEditor->setPlainText( index.data(contentType::notes).toString() );
         else
             itemWidget->setEditorData(editor, index);
@@ -71,13 +90,13 @@ bool ItemEditorWidget::isValid() const
 {
     if ( !m_index.isValid() )
         return false;
-    return (m_itemWidget != NULL && m_editor != NULL) || m_noteEditor != NULL;
+    return (m_itemWidget != nullptr && m_editor != nullptr) || m_noteEditor != nullptr;
 }
 
 void ItemEditorWidget::commitData(QAbstractItemModel *model) const
 {
     if ( hasChanges() ) {
-        if (m_noteEditor != NULL) {
+        if (m_noteEditor != nullptr) {
             model->setData(m_index, m_noteEditor->toPlainText(), contentType::notes);
             m_noteEditor->document()->setModified(false);
         } else {
@@ -90,9 +109,9 @@ bool ItemEditorWidget::hasChanges() const
 {
     if ( !m_index.isValid() )
         return false;
-    if (m_noteEditor != NULL)
+    if (m_noteEditor != nullptr)
         return m_noteEditor->document()->isModified();
-    return m_itemWidget != NULL && m_itemWidget->hasChanges(m_editor);
+    return m_itemWidget != nullptr && m_itemWidget->hasChanges(m_editor);
 }
 
 void ItemEditorWidget::setEditorPalette(const QPalette &palette)
@@ -115,6 +134,27 @@ void ItemEditorWidget::setEditorFont(const QFont &font)
 void ItemEditorWidget::setSaveOnReturnKey(bool enabled)
 {
     m_saveOnReturnKey = enabled;
+}
+
+void ItemEditorWidget::search(const QRegExp &re)
+{
+    if ( !re.isValid() || re.isEmpty() )
+        return;
+
+    auto tc = textCursor();
+    tc.setPosition(tc.selectionStart());
+    setTextCursor(tc);
+    findNext(re);
+}
+
+void ItemEditorWidget::findNext(const QRegExp &re)
+{
+    search(re, false);
+}
+
+void ItemEditorWidget::findPrevious(const QRegExp &re)
+{
+    search(re, true);
 }
 
 bool ItemEditorWidget::eventFilter(QObject *object, QEvent *event)
@@ -144,7 +184,7 @@ bool ItemEditorWidget::eventFilter(QObject *object, QEvent *event)
 
 void ItemEditorWidget::onItemWidgetDestroyed()
 {
-    m_itemWidget = NULL;
+    m_itemWidget = nullptr;
     emit invalidate();
 }
 
@@ -152,6 +192,91 @@ void ItemEditorWidget::saveAndExit()
 {
     emit save();
     emit invalidate();
+}
+
+void ItemEditorWidget::setFont()
+{
+    QTextCursor tc = textCursor();
+    QTextCharFormat format = tc.charFormat();
+
+    QFontDialog dialog(this);
+    dialog.setCurrentFont( format.font() );
+
+    if ( dialog.exec() == QDialog::Accepted ) {
+        const QFont font = dialog.selectedFont();
+        format.setFont(font);
+        tc.setCharFormat(format);
+    }
+}
+
+void ItemEditorWidget::toggleBoldText()
+{
+    QTextCursor tc = textCursor();
+    QTextCharFormat format = tc.charFormat();
+    const int weight = format.fontWeight() == QFont::Bold ? QFont::Normal : QFont::Bold;
+    format.setFontWeight(weight);
+    tc.setCharFormat(format);
+}
+
+void ItemEditorWidget::toggleItalicText()
+{
+    QTextCursor tc = textCursor();
+    QTextCharFormat format = tc.charFormat();
+    format.setFontItalic( !format.fontItalic() );
+    tc.setCharFormat(format);
+}
+
+void ItemEditorWidget::toggleUnderlineText()
+{
+    QTextCursor tc = textCursor();
+    QTextCharFormat format = tc.charFormat();
+    format.setFontUnderline( !format.fontUnderline() );
+    tc.setCharFormat(format);
+}
+
+void ItemEditorWidget::toggleStrikethroughText()
+{
+    QTextCursor tc = textCursor();
+    QTextCharFormat format = tc.charFormat();
+    format.setFontStrikeOut( !format.fontStrikeOut() );
+    tc.setCharFormat(format);
+}
+
+void ItemEditorWidget::setForeground()
+{
+    QTextCursor tc = textCursor();
+    QTextCharFormat format = tc.charFormat();
+
+    QColorDialog dialog(this);
+    dialog.setOptions(dialog.options() | QColorDialog::ShowAlphaChannel);
+    dialog.setCurrentColor( format.foreground().color() );
+
+    if ( dialog.exec() == QDialog::Accepted ) {
+        const QColor color = dialog.selectedColor();
+        format.setForeground(color);
+        tc.setCharFormat(format);
+    }
+}
+
+void ItemEditorWidget::setBackground()
+{
+    QTextCursor tc = textCursor();
+    QTextCharFormat format = tc.charFormat();
+
+    QColorDialog dialog(this);
+    dialog.setOptions(dialog.options() | QColorDialog::ShowAlphaChannel);
+    dialog.setCurrentColor( format.background().color() );
+
+    if ( dialog.exec() == QDialog::Accepted ) {
+        const QColor color = dialog.selectedColor();
+        format.setBackground(color);
+        tc.setCharFormat(format);
+    }
+}
+
+void ItemEditorWidget::eraseStyle()
+{
+    textCursor().setCharFormat( QTextCharFormat() );
 }
 
 QWidget *ItemEditorWidget::createEditor(const ItemWidget *itemWidget)
@@ -183,11 +308,8 @@ void ItemEditorWidget::initEditor(QWidget *editor)
     setAutoFillBackground(true);
 
     m_toolBar = new QToolBar(this);
-    m_toolBar->setBackgroundRole(QPalette::Base);
-    m_toolBar->setStyleSheet("QToolBar{border:0;background:transparent}"
-                             "QToolButton{background:transparent}");
 
-    QVBoxLayout *layout = new QVBoxLayout(this);
+    auto layout = new QVBoxLayout(this);
     layout->setSpacing(0);
     layout->setContentsMargins(QMargins(0, 0, 0, 0));
     layout->addWidget(m_toolBar);
@@ -200,7 +322,11 @@ void ItemEditorWidget::initMenuItems()
 {
     Q_ASSERT(m_editor);
 
-    foreach (QAction *action, m_toolBar->actions())
+    auto frame = qobject_cast<QFrame*>(m_editor);
+    if (frame)
+        frame->setFrameShape(QFrame::NoFrame);
+
+    for (auto action : m_toolBar->actions())
         delete action;
 
     QAction *act;
@@ -218,22 +344,152 @@ void ItemEditorWidget::initMenuItems()
     connect( act, SIGNAL(triggered()),
              this, SIGNAL(cancel()) );
 
-    QPlainTextEdit *plainTextEdit = qobject_cast<QPlainTextEdit*>(m_editor);
-    if (plainTextEdit != NULL) {
-        plainTextEdit->setFrameShape(QFrame::NoFrame);
+    auto doc = document();
+
+    if (document()) {
+        m_toolBar->addSeparator();
 
         act = new QAction( iconUndo(), tr("Undo"), m_editor );
         m_toolBar->addAction(act);
         act->setShortcut(QKeySequence::Undo);
         act->setEnabled(false);
-        connect( act, SIGNAL(triggered()), plainTextEdit, SLOT(undo()) );
-        connect( plainTextEdit, SIGNAL(undoAvailable(bool)), act, SLOT(setEnabled(bool)) );
+        connect( act, SIGNAL(triggered()), doc, SLOT(undo()) );
+        connect( doc, SIGNAL(undoAvailable(bool)), act, SLOT(setEnabled(bool)) );
 
         act = new QAction( iconRedo(), tr("Redo"), m_editor );
         m_toolBar->addAction(act);
         act->setShortcut(QKeySequence::Redo);
         act->setEnabled(false);
-        connect( act, SIGNAL(triggered()), plainTextEdit, SLOT(redo()) );
-        connect( plainTextEdit, SIGNAL(redoAvailable(bool)), act, SLOT(setEnabled(bool)) );
+        connect( act, SIGNAL(triggered()), doc, SLOT(redo()) );
+        connect( doc, SIGNAL(redoAvailable(bool)), act, SLOT(setEnabled(bool)) );
+
+        m_toolBar->addSeparator();
+
+        act = new QAction( iconFont(), tr("Font"), m_editor );
+        m_toolBar->addAction(act);
+        connect( act, SIGNAL(triggered()),
+                 this, SLOT(setFont()) );
+
+        act = new QAction( iconBold(), tr("Bold"), m_editor );
+        m_toolBar->addAction(act);
+        act->setShortcut( QKeySequence::Bold );
+        connect( act, SIGNAL(triggered()),
+                 this, SLOT(toggleBoldText()) );
+
+        act = new QAction( iconItalic(), tr("Italic"), m_editor );
+        m_toolBar->addAction(act);
+        act->setShortcut( QKeySequence::Italic );
+        connect( act, SIGNAL(triggered()),
+                 this, SLOT(toggleItalicText()) );
+
+        act = new QAction( iconUnderline(), tr("Underline"), m_editor );
+        m_toolBar->addAction(act);
+        act->setShortcut( QKeySequence::Underline );
+        connect( act, SIGNAL(triggered()),
+                 this, SLOT(toggleUnderlineText()) );
+
+        act = new QAction( iconStrikethrough(), tr("Strikethrough"), m_editor );
+        m_toolBar->addAction(act);
+        connect( act, SIGNAL(triggered()),
+                 this, SLOT(toggleStrikethroughText()) );
+
+        m_toolBar->addSeparator();
+
+        act = new QAction( iconForeground(), tr("Foreground"), m_editor );
+        m_toolBar->addAction(act);
+        connect( act, SIGNAL(triggered()),
+                 this, SLOT(setForeground()) );
+
+        act = new QAction( iconBackground(), tr("Background"), m_editor );
+        m_toolBar->addAction(act);
+        connect( act, SIGNAL(triggered()),
+                 this, SLOT(setBackground()) );
+
+        m_toolBar->addSeparator();
+
+        act = new QAction( iconEraseStyle(), tr("Erase Style"), m_editor );
+        m_toolBar->addAction(act);
+        connect( act, SIGNAL(triggered()),
+                 this, SLOT(eraseStyle()) );
+
+        m_toolBar->addSeparator();
+
+        act = new QAction( iconSearch(), tr("Search"), m_editor );
+        act->setShortcuts(QKeySequence::Find);
+        m_toolBar->addAction(act);
+        connect( act, SIGNAL(triggered()),
+                 this, SIGNAL(searchRequest()) );
+    }
+}
+
+void ItemEditorWidget::search(const QRegExp &re, bool backwards)
+{
+    if ( !re.isValid() )
+        return;
+
+    auto tc = textCursor();
+    if ( tc.isNull() )
+        return;
+
+    QTextDocument::FindFlags flags;
+    if (backwards)
+        flags = QTextDocument::FindBackward;
+
+    auto tc2 = tc.document()->find(re, tc, flags);
+    if (tc2.isNull()) {
+        tc2 = tc;
+        if (backwards)
+            tc2.movePosition(QTextCursor::End);
+        else
+            tc2.movePosition(QTextCursor::Start);
+        tc2 = tc.document()->find(re, tc2, flags);
+    }
+
+    if (!tc2.isNull())
+        setTextCursor(tc2);
+}
+
+template<typename TextEdit>
+TextEdit *ItemEditorWidget::editor() const
+{
+    auto textEdit = qobject_cast<TextEdit*>(m_editor);
+    return textEdit ? textEdit : m_editor->findChild<TextEdit*>();
+}
+
+QTextDocument *ItemEditorWidget::document() const
+{
+    auto plainTextEdit = editor<QPlainTextEdit>();
+    if (plainTextEdit)
+        return plainTextEdit->document();
+
+    auto textEdit = editor<QTextEdit>();
+    if (textEdit)
+        return textEdit->document();
+
+    return nullptr;
+}
+
+QTextCursor ItemEditorWidget::textCursor() const
+{
+    auto plainTextEdit = editor<QPlainTextEdit>();
+    if (plainTextEdit)
+        return plainTextEdit->textCursor();
+
+    auto textEdit = editor<QTextEdit>();
+    if (textEdit)
+        return textEdit->textCursor();
+
+    return QTextCursor();
+}
+
+void ItemEditorWidget::setTextCursor(const QTextCursor &tc)
+{
+    auto plainTextEdit = editor<QPlainTextEdit>();
+    if (plainTextEdit) {
+        plainTextEdit->setTextCursor(tc);
+    } else {
+        auto textEdit = editor<QTextEdit>();
+        if (textEdit)
+            textEdit->setTextCursor(tc);
     }
 }

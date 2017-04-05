@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -60,6 +60,9 @@ public:
 
     void addFinishedAction(const QString &name);
 
+    QVariantMap actionData(int id) const;
+    void setActionData(int id, const QVariantMap &data);
+
 public slots:
     /** Execute action. */
     void action(Action *action);
@@ -77,10 +80,9 @@ private slots:
 
     void actionDialogClosed(ActionDialog *dialog);
 
-    void addItems(const QStringList &items, const QString &tabName);
-    void addItems(const QStringList &items, const QModelIndex &index);
+    void addItems(const QStringList &items, const QString &format, const QString &tabName);
     void addItem(const QByteArray &data, const QString &format, const QString &tabName);
-    void addItem(const QByteArray &data, const QString &format, const QModelIndex &index);
+    void changeItem(const QByteArray &data, const QString &format, const QModelIndex &index);
 
 private:
     MainWindow *m_wnd;
@@ -89,6 +91,8 @@ private:
     ProcessManagerDialog *m_activeActionDialog;
     QString m_currentTabName;
     Command m_lastActionDialogCommand;
+    QHash<int, Action*> m_actions;
+    int m_lastActionId = -1;
 };
 
 #endif // ACTIONHANDLER_H

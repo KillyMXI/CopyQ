@@ -1,5 +1,5 @@
-
 include("./common.pri")
+
 TEMPLATE = subdirs
 
 # generate cache file for build
@@ -9,6 +9,7 @@ DEFINES += QT_NO_CAST_TO_ASCII
 SUBDIRS += src \
            plugins
 TRANSLATIONS = \
+    translations/copyq_ar.ts \
     translations/copyq_cs.ts \
     translations/copyq_da.ts \
     translations/copyq_de.ts \
@@ -17,11 +18,16 @@ TRANSLATIONS = \
     translations/copyq_hu.ts \
     translations/copyq_it.ts \
     translations/copyq_ja.ts \
+    translations/copyq_lt.ts \
+    translations/copyq_nb.ts \
     translations/copyq_nl.ts \
     translations/copyq_pl.ts \
     translations/copyq_pt_PT.ts \
     translations/copyq_pt_BR.ts \
     translations/copyq_ru.ts \
+    translations/copyq_sk.ts \
+    translations/copyq_sv.ts \
+    translations/copyq_tr.ts \
     translations/copyq_uk.ts \
     translations/copyq_zh_CN.ts \
     translations/copyq_zh_TW.ts
@@ -54,9 +60,4 @@ macx {
     bundle_mac.target = CopyQ.app
     bundle_mac.commands = mv copyq.app CopyQ.app
     QMAKE_EXTRA_TARGETS += bundle_mac
-
-    # Create a dmg file
-    dmg.commands = $$_PRO_FILE_PWD_/utils/create_dmg.sh
-    dmg.depends = bundle_mac
-    QMAKE_EXTRA_TARGETS += dmg
 }

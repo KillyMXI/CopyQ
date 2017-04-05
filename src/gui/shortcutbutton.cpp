@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -38,7 +38,6 @@ ShortcutButton::ShortcutButton(QWidget *parent)
     , m_defaultShortcut()
     , m_layout(new QHBoxLayout(this))
     , m_buttonAddShortcut(new QPushButton(this))
-    , m_expectModifier(false)
 {
     m_layout->setMargin(0);
     m_layout->setSpacing(2);
@@ -49,6 +48,7 @@ ShortcutButton::ShortcutButton(QWidget *parent)
     const int h = m_buttonAddShortcut->sizeHint().height();
     m_buttonAddShortcut->setMaximumSize(h, h);
     m_layout->addWidget(m_buttonAddShortcut);
+    setFocusProxy(m_buttonAddShortcut);
 
     connect( m_buttonAddShortcut, SIGNAL(clicked()),
              this, SLOT(onButtonAddShortcutClicked()) );
@@ -61,8 +61,12 @@ void ShortcutButton::addShortcut(const QKeySequence &shortcut)
     if ( shortcut.isEmpty() || shortcuts().contains(shortcut) )
         return;
 
-    QPushButton *button = new QPushButton(this);
-    m_layout->insertWidget( shortcutCount(), button, 1 );
+    auto button = new QPushButton(this);
+    const int buttonIndex = shortcutCount();
+    m_layout->insertWidget(buttonIndex, button, 1);
+
+    setTabOrder(m_buttonAddShortcut, button);
+
     connect( button, SIGNAL(clicked()),
              this, SLOT(onShortcutButtonClicked()) );
     setButtonShortcut(button, shortcut);
@@ -140,25 +144,23 @@ void ShortcutButton::showEvent(QShowEvent *event)
 void ShortcutButton::onShortcutButtonClicked()
 {
     QPushButton *button = qobject_cast<QPushButton*>(sender());
-    Q_ASSERT(button != NULL);
+    Q_ASSERT(button != nullptr);
     addShortcut(button);
 }
 
 void ShortcutButton::onButtonAddShortcutClicked()
 {
-    addShortcut(NULL);
+    addShortcut(nullptr);
 }
 
 void ShortcutButton::addShortcut(QPushButton *shortcutButton)
 {
     QWidget *parent = this;
     // Destroy shortcut dialog, if its shortcut button is deleted.
-    if (shortcutButton != NULL)
+    if (shortcutButton != nullptr)
         parent = shortcutButton;
 
-    ShortcutDialog *dialog = new ShortcutDialog(parent);
-    dialog->setExpectModifier(m_expectModifier);
-
+    auto dialog = new ShortcutDialog(parent);
     if (dialog->exec() == QDialog::Rejected)
         return;
 

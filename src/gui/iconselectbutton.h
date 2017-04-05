@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -27,11 +27,11 @@ class IconSelectButton : public QPushButton
     Q_OBJECT
     Q_PROPERTY(QString currentIcon READ currentIcon WRITE setCurrentIcon NOTIFY currentIconChanged)
 public:
-    explicit IconSelectButton(QWidget *parent = NULL);
+    explicit IconSelectButton(QWidget *parent = nullptr);
 
     const QString &currentIcon() const { return m_currentIcon; }
 
-    QSize sizeHint() const;
+    QSize sizeHint() const override;
 
 public slots:
     void setCurrentIcon(const QString &iconString);

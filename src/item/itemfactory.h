@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -27,16 +27,18 @@
 #include <QSet>
 #include <QVector>
 
+#include <memory>
+
 class ItemLoaderInterface;
 class ItemWidget;
 class QAbstractItemModel;
-class QFile;
+class QIODevice;
 class QModelIndex;
 class QWidget;
 struct Command;
 struct CommandMenu;
 
-typedef QVector<ItemLoaderInterface *> ItemLoaderList;
+using ItemLoaderList = QVector<ItemLoaderPtr>;
 
 /**
  * Loads item plugins (loaders) and instantiates ItemWidget objects using appropriate
@@ -50,7 +52,7 @@ public:
     /**
      * Loads item plugins.
      */
-    explicit ItemFactory(QObject *parent = NULL);
+    explicit ItemFactory(QObject *parent = nullptr);
 
     ~ItemFactory();
 
@@ -58,17 +60,24 @@ public:
      * Instantiate ItemWidget using given @a loader if possible.
      */
     ItemWidget *createItem(
-            ItemLoaderInterface *loader, const QModelIndex &index, QWidget *parent);
+            const ItemLoaderPtr &loader, const QModelIndex &index, QWidget *parent,
+            bool antialiasing, bool transform = true, bool preview = false);
 
     /**
      * Instantiate ItemWidget using appropriate loader or creates simple ItemWidget (DummyItem).
      */
-    ItemWidget *createItem(const QModelIndex &index, QWidget *parent);
+    ItemWidget *createItem(
+            const QModelIndex &index, QWidget *parent, bool antialiasing,
+            bool transform = true, bool preview = false);
+
+    ItemWidget *createSimpleItem(
+            const QModelIndex &index, QWidget *parent, bool antialiasing);
 
     /**
      * Uses next/previous item loader to instantiate ItemWidget.
      */
-    ItemWidget *otherItemLoader(const QModelIndex &index, ItemWidget *current, bool next);
+    ItemWidget *otherItemLoader(
+            const QModelIndex &index, ItemWidget *current, bool next, bool antialiasing);
 
     /**
      * Formats to save in history, union of enabled ItemLoaderInterface objects.
@@ -93,12 +102,12 @@ public:
     /**
      * Enable or disable instantiation of ItemWidget objects using @a loader.
      */
-    void setLoaderEnabled(ItemLoaderInterface *loader, bool enabled);
+    void setLoaderEnabled(const ItemLoaderPtr &loader, bool enabled);
 
     /**
      * Return true if @a loader is enabled.
      */
-    bool isLoaderEnabled(const ItemLoaderInterface *loader) const;
+    bool isLoaderEnabled(const ItemLoaderPtr &loader) const;
 
     /**
      * Return true if no plugins were loaded.
@@ -107,25 +116,22 @@ public:
 
     /**
      * Load items using a plugin.
-     * @return true only if any plugin (ItemLoaderInterface::loadItems()) returned true
+     * @return the first plugin (or nullptr) for which ItemLoaderInterface::loadItems() returned true
      */
-    ItemLoaderInterface *loadItems(QAbstractItemModel *model, QFile *file);
+    ItemSaverPtr loadItems(const QString &tabName, QAbstractItemModel *model, QIODevice *file, int maxItems);
 
     /**
      * Initialize tab.
-     * @return true only if any plugin (ItemLoaderInterface::initializeTab()) returned true
+     * @return the first plugin (or nullptr) for which ItemLoaderInterface::initializeTab() returned true
      */
-    ItemLoaderInterface *initializeTab(QAbstractItemModel *model);
+    ItemSaverPtr initializeTab(const QString &tabName, QAbstractItemModel *model, int maxItems);
 
     /**
      * Return true only if any plugin (ItemLoaderInterface::matches()) returns true;
      */
     bool matches(const QModelIndex &index, const QRegExp &re) const;
 
-    /**
-     * Return script to run before client scripts.
-     */
-    QString scripts() const;
+    QList<ItemScriptable *> scriptableObjects(QObject *parent) const;
 
     /**
      * Adds commands from scripts for command dialog.
@@ -135,7 +141,8 @@ public:
     void emitError(const QString &errorString);
 
 signals:
-    void error(const QString &);
+    void error(const QString &errorString);
+    void addCommands(const QList<Command> &commands);
 
 private slots:
     /** Called if child ItemWidget destroyed. **/
@@ -150,12 +157,12 @@ private:
     /** Calls ItemLoaderInterface::transform() for all plugins in reverse order. */
     ItemWidget *transformItem(ItemWidget *item, const QModelIndex &index);
 
-    void addLoader(ItemLoaderInterface *loader);
+    void addLoader(const ItemLoaderPtr &loader);
 
     ItemLoaderList m_loaders;
-    ItemLoaderInterface *m_dummyLoader;
-    QSet<const ItemLoaderInterface *> m_disabledLoaders;
-    QMap<QObject *, ItemLoaderInterface *> m_loaderChildren;
+    ItemLoaderPtr m_dummyLoader;
+    ItemLoaderList m_disabledLoaders;
+    QMap<QObject *, ItemLoaderPtr> m_loaderChildren;
 };
 
 #endif // ITEMFACTORY_H

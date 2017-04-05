@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -37,7 +37,7 @@ class Tests : public QObject
     Q_OBJECT
 
 public:
-    explicit Tests(const TestInterfacePtr &test, QObject *parent = NULL);
+    explicit Tests(const TestInterfacePtr &test, QObject *parent = nullptr);
 
 private slots:
     void initTestCase();
@@ -45,30 +45,98 @@ private slots:
     void init();
     void cleanup();
 
-    void showHide();
+    void commandHelp();
+    void commandVersion();
+    void badCommand();
 
-    void windowTitle();
+    void commandExit();
+    void commandEval();
+    void commandEvalThrows();
+    void commandEvalSyntaxError();
+    void commandEvalArguments();
+    void commandPrint();
+    void commandAbort();
+    void commandFail();
+    void commandSource();
+
+    void commandVisible();
+    void commandToggle();
+    void commandHide();
+    void commandShow();
+    void commandShowAt();
+    void commandFocused();
+
+    void commandsUnicode();
+
+    void commandsAddRead();
+    void commandsWriteRead();
+    void commandChange();
+
+    void commandSetCurrentTab();
+
+    void commandConfig();
+
+    void commandDialog();
+
+    void commandsPackUnpack();
+    void commandsBase64();
+    void commandsGetSetItem();
+
+    void commandEscapeHTML();
+
+    void commandExecute();
+
+    void commandSettings();
+
+    void commandsEnvSetEnv();
+
+    void commandSleep();
+
+    void commandsData();
+
+    void commandCurrentWindowTitle();
+
+    void commandCopy();
+    void commandClipboard();
+    void commandHasClipboardFormat();
+
+    void commandEdit();
+
+    void commandGetSetCurrentPath();
+
+    void commandSelectItems();
+
+    void commandsExportImport();
+
+    void commandsGetSetCommands();
+
+    void commandsImportExportCommands();
+
+    void commandScreenshot();
+
+    void classFile();
+    void classDir();
+    void classTemporaryFile();
+
+    void chainingCommands();
+
+    void configMaxitems();
 
     void keysAndFocusing();
-
-    void firstItemSelectedByDefault();
 
     void selectItems();
 
     void moveItems();
     void deleteItems();
     void searchItems();
+    void searchRowNumber();
     void copyItems();
 
-    void helpCommand();
-    void versionCommand();
-    void badCommand();
+    void createTabDialog();
 
-    void copyCommand();
-
-    void dialogCommand();
-
-    void createAndCopyNewItem();
+    void editItems();
+    void createNewItem();
+    void editNotes();
 
     void toggleClipboardMonitoring();
 
@@ -81,47 +149,50 @@ private slots:
     void insertRemoveItems();
     void renameTab();
     void importExportTab();
-    void eval();
-    void rawData();
+
+    void removeAllFoundItems();
 
     void nextPrevious();
 
-    void options();
-
-    void editCommand();
-
     void externalEditor();
-
-    void editNotes();
-
-    void exitCommand();
-    void abortCommand();
 
     void nextPreviousTab();
 
     void openAndSavePreferences();
 
+    void pasteFromMainWindow();
+
     void tray();
+    void menu();
 
-    void packUnpackCommands();
-    void base64Commands();
-    void getSetItemCommands();
+    void traySearch();
 
-    void escapeHTMLCommand();
+    // Options for tray menu.
+    void configTrayTab();
+    void configMove();
+    void configTrayTabIsCurrent();
 
-    void executeCommand();
+    void shortcutCommand();
+    void shortcutCommandOverrideEnter();
+    void shortcutCommandMatchInput();
+    void shortcutCommandMatchCmd();
 
-    void settingsCommand();
+    void shortcutCommandSelectedItemData();
+    void shortcutCommandSetSelectedItemData();
+    void shortcutCommandSelectedItemsData();
+    void shortcutCommandSetSelectedItemsData();
 
-    void fileClass();
-    void dirClass();
-
-    void setEnvCommand();
+    void automaticCommandIgnore();
+    void automaticCommandInput();
+    void automaticCommandRegExp();
+    void automaticCommandSetData();
+    void automaticCommandOutputTab();
+    void automaticCommandNoOutputTab();
 
 private:
     void clearServerErrors();
-    int run(const QStringList &arguments, QByteArray *stdoutData = NULL,
-            QByteArray *stderrData = NULL, const QByteArray &in = QByteArray());
+    int run(const QStringList &arguments, QByteArray *stdoutData = nullptr,
+            QByteArray *stderrData = nullptr, const QByteArray &in = QByteArray());
     bool hasTab(const QString &tabName);
 
     TestInterfacePtr m_test;

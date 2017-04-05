@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,30 +21,21 @@
 
 #include "common/common.h"
 #include "common/mimetypes.h"
-#include "gui/clipboardbrowser.h"
+#include "common/shortcuts.h"
+#include "common/textdata.h"
 #include "gui/iconfactory.h"
 
+#include <QMenu>
 #include <QShortcutEvent>
 
 CommandAction::CommandAction(
         const Command &command,
         const QString &name,
-        CommandAction::Type type,
-        ClipboardBrowser *browser,
-        QObject *parent)
-    : QAction(parent)
+        QMenu *parentMenu)
+    : QAction(parentMenu)
     , m_command(command)
-    , m_type(type)
-    , m_browser(browser)
 {
-    Q_ASSERT(browser);
-
-    if (m_type == ClipboardCommand) {
-        m_command.transform = false;
-        m_command.hideWindow = false;
-    }
-
-    setText( elideText(name, browser->font()) );
+    setText( elideText(name, parentMenu->font()) );
 
     setIcon( iconFromFile(m_command.icon) );
     if (m_command.icon.size() == 1)
@@ -52,7 +43,7 @@ CommandAction::CommandAction(
 
     connect(this, SIGNAL(triggered()), this, SLOT(onTriggered()));
 
-    browser->addAction(this);
+    parentMenu->addAction(this);
 }
 
 const Command &CommandAction::command() const
@@ -72,23 +63,6 @@ bool CommandAction::event(QEvent *event)
 
 void CommandAction::onTriggered()
 {
-    Command command = m_command;
-    QVariantMap dataMap;
-
-    if (m_type == ClipboardCommand) {
-        const QMimeData *data = clipboardData();
-        if (data == NULL)
-            setTextData( &dataMap, m_browser->selectedText() );
-        else
-            dataMap = cloneData(*data);
-    } else {
-        dataMap = m_browser->getSelectedItemData();
-    }
-
-    if (!m_triggeredShortcut.isEmpty()) {
-        dataMap.insert(mimeShortcut, m_triggeredShortcut);
-        m_triggeredShortcut.clear();
-    }
-
-    emit triggerCommand(command, dataMap, m_type);
+    emit triggerCommand(this, m_triggeredShortcut);
+    m_triggeredShortcut.clear();
 }

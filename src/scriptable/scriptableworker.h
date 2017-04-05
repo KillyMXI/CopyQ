@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,31 +20,56 @@
 #ifndef SCRIPTABLEWORKER_H
 #define SCRIPTABLEWORKER_H
 
-#include "common/arguments.h"
 #include "common/common.h"
 #include "gui/mainwindow.h"
 #include "scriptable/scriptable.h"
 #include "scriptable/scriptableproxy.h"
 
+#include <QObject>
 #include <QRunnable>
 
 class ClientSocket;
+using ClientSocketPtr = std::shared_ptr<ClientSocket>;
+
+class ItemScriptable;
+
+/**
+ * Handles socket destruction.
+ *
+ * ScriptableWorker destructor is called in different thread than
+ * the socket's thread.
+ *
+ * When ScriptableWorker is finished, it invokes deleteLater()
+ * of the guard so the socket is deleted in correct thread.
+ */
+class ScriptableWorkerSocketGuard : public QObject {
+public:
+    explicit ScriptableWorkerSocketGuard(const ClientSocketPtr &socket);
+
+    ~ScriptableWorkerSocketGuard();
+
+    ClientSocket *socket() const;
+
+private:
+    ClientSocketPtr m_socket;
+};
 
 class ScriptableWorker : public QRunnable
 {
 public:
     ScriptableWorker(
-            MainWindow *mainWindow, const Arguments &args, ClientSocket *socket,
-            const QString &pluginScript);
+            MainWindow *mainWindow,
+            const ClientSocketPtr &socket,
+            const QList<ItemScriptable*> &scriptables);
 
-    void run();
+    ~ScriptableWorker();
+
+    void run() override;
 
 private:
     MainWindow *m_wnd;
-    Arguments m_args;
-    ClientSocket *m_socket;
-    QString m_pluginScript;
-    QString m_id;
+    QPointer<ScriptableWorkerSocketGuard> m_socketGuard;
+    QList<ItemScriptable*> m_scriptables;
 };
 
 #endif // SCRIPTABLEWORKER_H

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,9 +23,8 @@
 
 COPYQ_DECLARE_SCRIPTABLE_CLASS(DirClass)
 
-DirClass::DirClass(const QString &currentPath, QScriptEngine *engine)
+DirClass::DirClass(QScriptEngine *engine)
     : ScriptableClass(engine)
-    , m_currentPath(currentPath)
 {
 }
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,12 +19,14 @@
 
 #include "x11platform.h"
 
-#include "common/common.h"
+#include "app/applicationexceptionhandler.h"
+#include "common/textdata.h"
 
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QRegExp>
+#include <QStringList>
 #include <QVariant>
 #include <QWidget>
 
@@ -32,19 +34,20 @@
 #include "x11platformclipboard.h"
 #include "x11displayguard.h"
 
-#include <X11/Xlib.h>
 #include <X11/Xatom.h>
+
+#include <memory>
 
 namespace {
 
-int (*old_xio_errhandler)(Display *) = NULL;
+int (*old_xio_errhandler)(Display *) = nullptr;
 
 // Try to handle X11 fatal error gracefully.
 int copyq_xio_errhandler(Display *display)
 {
     // Try to call MainWindow::saveTabs().
     if ( QCoreApplication::instance() ) {
-        foreach ( QWidget *obj, qApp->topLevelWidgets() ) {
+        for ( auto obj : qApp->topLevelWidgets() ) {
             if (obj->objectName() == "MainWindow") {
                 QMetaObject::invokeMethod(obj, "saveTabs");
                 break;
@@ -58,8 +61,6 @@ int copyq_xio_errhandler(Display *display)
 
     // As documentation for XSetIOErrorHandler states, this function should not return.
     exit(1);
-
-    return 0;
 }
 
 #ifdef COPYQ_DESKTOP_PREFIX
@@ -79,39 +80,26 @@ PlatformPtr createPlatformNativeInterface()
     return PlatformPtr(new X11Platform);
 }
 
-X11Platform::X11Platform()
-    : d(new X11DisplayGuard)
-{
-}
-
-X11Platform::~X11Platform()
-{
-}
+X11Platform::~X11Platform() = default;
 
 PlatformWindowPtr X11Platform::getWindow(WId winId)
 {
-    QScopedPointer<X11PlatformWindow> window(new X11PlatformWindow(*d, winId));
-    return PlatformWindowPtr(window->isValid() ? window.take() : NULL);
+    auto d = std::make_shared<X11DisplayGuard>();
+    if (!d->display())
+        return PlatformWindowPtr();
+
+    std::unique_ptr<X11PlatformWindow> window(new X11PlatformWindow(d, winId));
+    return PlatformWindowPtr(window->isValid() ? window.release() : nullptr);
 }
 
 PlatformWindowPtr X11Platform::getCurrentWindow()
 {
+    auto d = std::make_shared<X11DisplayGuard>();
     if (!d->display())
         return PlatformWindowPtr();
 
-    QScopedPointer<X11PlatformWindow> window(new X11PlatformWindow(*d));
-    return PlatformWindowPtr(window->isValid() ? window.take() : NULL);
-}
-
-PlatformWindowPtr X11Platform::deserialize(const QByteArray &data)
-{
-    return getWindow(static_cast<WId>(data.toLongLong()));
-}
-
-bool X11Platform::serialize(WId winId, QByteArray *data)
-{
-    *data = QByteArray::number(static_cast<qlonglong>(winId));
-    return true;
+    std::unique_ptr<X11PlatformWindow> window(new X11PlatformWindow(d));
+    return PlatformWindowPtr(window->isValid() ? window.release() : nullptr);
 }
 
 bool X11Platform::canAutostart()
@@ -211,26 +199,73 @@ void X11Platform::setAutostartEnabled(bool enable)
 #endif
 }
 
+QCoreApplication *X11Platform::createConsoleApplication(int &argc, char **argv)
+{
+    return new ApplicationExceptionHandler<QCoreApplication>(argc, argv);
+}
+
 QApplication *X11Platform::createServerApplication(int &argc, char **argv)
 {
     old_xio_errhandler = XSetIOErrorHandler(copyq_xio_errhandler);
-    return new QApplication(argc, argv);
+    return new ApplicationExceptionHandler<QApplication>(argc, argv);
 }
 
 QApplication *X11Platform::createMonitorApplication(int &argc, char **argv)
 {
-    return new QApplication(argc, argv);
+    return new ApplicationExceptionHandler<QApplication>(argc, argv);
 }
 
 QCoreApplication *X11Platform::createClientApplication(int &argc, char **argv)
 {
-    return new QCoreApplication(argc, argv);
+    return new ApplicationExceptionHandler<QCoreApplication>(argc, argv);
 }
 
 PlatformClipboardPtr X11Platform::clipboard()
 {
-    if (!d->display())
-        return PlatformClipboardPtr();
-
+    auto d = std::make_shared<X11DisplayGuard>();
     return PlatformClipboardPtr(new X11PlatformClipboard(d));
+}
+
+QStringList X11Platform::getCommandLineArguments(int argc, char **argv)
+{
+    QStringList arguments;
+
+    for (int i = 1; i < argc; ++i)
+        arguments.append( QString::fromUtf8(argv[i]) );
+
+    return arguments;
+}
+
+bool X11Platform::findPluginDir(QDir *pluginsDir)
+{
+    pluginsDir->setPath( qApp->applicationDirPath() );
+
+    if ( pluginsDir->dirName() == QString("bin")
+         && pluginsDir->cdUp()
+         && (pluginsDir->cd("lib64") || pluginsDir->cd("lib"))
+         && pluginsDir->cd("copyq") )
+    {
+        // OK, installed in /usr/local/bin or /usr/bin.
+        return true;
+    }
+
+    pluginsDir->setPath( qApp->applicationDirPath() );
+
+    if ( pluginsDir->cd("plugins") ) {
+        // OK, plugins in same directory as executable.
+        pluginsDir->cd("copyq");
+        return true;
+    }
+
+    return false;
+}
+
+QString X11Platform::defaultEditorCommand()
+{
+    return "gedit %1";
+}
+
+QString X11Platform::translationPrefix()
+{
+    return QString();
 }

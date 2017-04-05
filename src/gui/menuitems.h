@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -29,8 +29,8 @@ namespace Actions {
 
 enum Id {
     File_New,
-    File_ImportTab,
-    File_ExportTab,
+    File_Import,
+    File_Export,
     File_Preferences,
     File_Commands,
     File_ShowClipboardContent,
@@ -46,6 +46,7 @@ enum Id {
 
     Item_MoveToClipboard,
     Item_ShowContent,
+    Item_ShowPreview,
     Item_Remove,
     Item_Edit,
     Item_EditNotes,
@@ -74,17 +75,17 @@ enum Id {
 
 struct MenuItem {
     QString iconName;
-    ushort iconId;
+    ushort iconId = 0;
     QString text;
     QString settingsKey;
     QKeySequence defaultShortcut;
     QList<QKeySequence> shortcuts;
 };
 
-typedef QVector<MenuItem> MenuItems;
+using MenuItems = QVector<MenuItem>;
 
 MenuItems menuItems();
 
-void loadShortcuts(MenuItems *items, QSettings &settings);
+void loadShortcuts(MenuItems *items, const QSettings &settings);
 
 #endif // MENUITEMS_H

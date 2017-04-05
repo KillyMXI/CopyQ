@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,16 +24,21 @@
 enum CommandStatus {
     /** Script finished */
     CommandFinished = 0,
-    /** Command invocation error. */
+    /** Script finished with exit code 1 (fail() was called) */
     CommandError = 1,
-    /** Bad command syntax. */
+    /** Bad command syntax */
     CommandBadSyntax = 2,
-    /** Command successfully invoked. */
-    CommandSuccess,
-    /** Activate window */
-    CommandActivateWindow,
-    /** Ask client to send data from its stdin. */
-    CommandReadInput
+    /** Exception thrown */
+    CommandException = 4,
+
+    /** Print on stdout */
+    CommandPrint,
+    /** Ask client to send data from its stdin */
+    CommandReadInput,
+    /** Arguments/script from client */
+    CommandArguments,
+    /** Client data from its stdin */
+    CommandReadInputReply
 };
 
 #endif // COMMANDSTATUS_H

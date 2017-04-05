@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,11 +21,14 @@
 #define ITEMEDITORWIDGET_H
 
 #include <QPersistentModelIndex>
+#include <QRegExp>
 #include <QWidget>
 
 class ItemWidget;
 class QAbstractItemModel;
 class QPlainTextEdit;
+class QTextCursor;
+class QTextDocument;
 class QToolBar;
 
 /**
@@ -36,7 +39,7 @@ class ItemEditorWidget : public QWidget
     Q_OBJECT
 public:
     ItemEditorWidget(ItemWidget *itemWidget, const QModelIndex &index, bool editNotes,
-                     QWidget *parent = NULL);
+                     QWidget *parent = nullptr);
 
     bool isValid() const;
 
@@ -52,22 +55,47 @@ public:
 
     QModelIndex index() const { return m_index; }
 
+    void search(const QRegExp &re);
+
+    void findNext(const QRegExp &re);
+
+    void findPrevious(const QRegExp &re);
+
 signals:
     void save();
     void cancel();
     void invalidate();
+    void searchRequest();
 
 protected:
-    bool eventFilter(QObject *object, QEvent *event);
+    bool eventFilter(QObject *object, QEvent *event) override;
 
 private slots:
     void onItemWidgetDestroyed();
     void saveAndExit();
 
+    void setFont();
+    void toggleBoldText();
+    void toggleItalicText();
+    void toggleUnderlineText();
+    void toggleStrikethroughText();
+    void setForeground();
+    void setBackground();
+    void eraseStyle();
+
 private:
     QWidget *createEditor(const ItemWidget *itemWidget);
     void initEditor(QWidget *editor);
     void initMenuItems();
+
+    void search(const QRegExp &re, bool backwards);
+
+    template <typename TextEdit>
+    TextEdit *editor() const;
+
+    QTextDocument *document() const;
+    QTextCursor textCursor() const;
+    void setTextCursor(const QTextCursor &tc);
 
     ItemWidget *m_itemWidget;
     QPersistentModelIndex m_index;

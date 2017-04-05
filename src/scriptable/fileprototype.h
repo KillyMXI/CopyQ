@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -30,7 +30,7 @@ class FilePrototype : public QObject, public QScriptable
 {
     Q_OBJECT
 public:
-    explicit FilePrototype(QObject *parent = NULL);
+    explicit FilePrototype(QObject *parent = nullptr);
 
 public slots:
     bool open();

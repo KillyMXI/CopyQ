@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,8 +23,10 @@
 #include "common/action.h"
 #include "common/common.h"
 #include "common/contenttype.h"
+#include "common/display.h"
 #include "common/log.h"
 #include "common/mimetypes.h"
+#include "common/textdata.h"
 #include "gui/actiondialog.h"
 #include "gui/processmanagerdialog.h"
 #include "gui/clipboardbrowser.h"
@@ -33,6 +35,8 @@
 
 #include <QDateTime>
 #include <QModelIndex>
+
+#include <cmath>
 
 ActionHandler::ActionHandler(MainWindow *mainWindow)
     : QObject(mainWindow)
@@ -45,7 +49,7 @@ ActionHandler::ActionHandler(MainWindow *mainWindow)
 
 ActionDialog *ActionHandler::createActionDialog(const QStringList &tabs)
 {
-    ActionDialog *actionDialog = new ActionDialog(m_wnd);
+    auto actionDialog = new ActionDialog(m_wnd);
     actionDialog->setAttribute(Qt::WA_DeleteOnClose, true);
     actionDialog->setOutputTabs(tabs, QString());
     actionDialog->setCommand(m_lastActionDialogCommand);
@@ -73,20 +77,35 @@ void ActionHandler::addFinishedAction(const QString &name)
     m_activeActionDialog->actionFinished(name);
 }
 
+QVariantMap ActionHandler::actionData(int id) const
+{
+    const auto action = m_actions.value(id);
+    return action ? action->data() : QVariantMap();
+}
+
+void ActionHandler::setActionData(int id, const QVariantMap &data)
+{
+    const auto action = m_actions.value(id);
+    if (action)
+        action->setData(data);
+}
+
 void ActionHandler::action(Action *action)
 {
     action->setParent(this);
 
+    const auto id = ++m_lastActionId;
+    action->setId(id);
+    m_actions.insert(id, action);
+
     m_lastAction = action;
 
-    connect( action, SIGNAL(newItems(QStringList, QString)),
-             this, SLOT(addItems(QStringList, QString)) );
-    connect( action, SIGNAL(newItems(QStringList, QModelIndex)),
-             this, SLOT(addItems(QStringList, QModelIndex)) );
+    connect( action, SIGNAL(newItems(QStringList, QString, QString)),
+             this, SLOT(addItems(QStringList, QString, QString)) );
     connect( action, SIGNAL(newItem(QByteArray, QString, QString)),
              this, SLOT(addItem(QByteArray, QString, QString)) );
-    connect( action, SIGNAL(newItem(QByteArray, QString, QModelIndex)),
-             this, SLOT(addItem(QByteArray, QString, QModelIndex)) );
+    connect( action, SIGNAL(changeItem(QByteArray, QString, QModelIndex)),
+             this, SLOT(changeItem(QByteArray, QString, QModelIndex)) );
     connect( action, SIGNAL(actionStarted(Action*)),
              this, SLOT(actionStarted(Action*)) );
     connect( action, SIGNAL(actionFinished(Action*)),
@@ -112,16 +131,20 @@ void ActionHandler::actionStarted(Action *action)
 
 void ActionHandler::closeAction(Action *action)
 {
+    m_actions.remove(action->id());
+
     QString msg;
 
     QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::Information;
 
     if ( action->actionFailed() ) {
-        msg += tr("Error: %1\n").arg(action->errorString()) + action->errorOutput();
+        msg = tr("Error: %1\n").arg(action->errorString()) + action->errorOutput();
         icon = QSystemTrayIcon::Critical;
     } else if ( action->exitCode() != 0 ) {
-        msg += tr("Exit code: %1\n").arg(action->exitCode()) + action->errorOutput();
-        icon = QSystemTrayIcon::Warning;
+        if ( !action->ignoreExitCode() ) {
+            msg = tr("Exit code: %1\n").arg(action->exitCode()) + "\n" + action->errorOutput();
+            icon = QSystemTrayIcon::Warning;
+        }
     } else if ( !action->inputFormats().isEmpty() ) {
         const QModelIndex index = action->index();
         ClipboardBrowser *c = m_wnd->browserForItem(index);
@@ -139,10 +162,20 @@ void ActionHandler::closeAction(Action *action)
                 AppConfig().option<Config::notification_maximum_width>();
         const QString command = action->command()
                 .replace("copyq eval --", "copyq:");
-        const QString name = QString(command).replace('\n', " ");
+        const QString name = action->name().isEmpty()
+                ? QString(command).replace('\n', " ")
+                : action->name();
         const QString format = tr("Command %1").arg(quoteString("%1"));
         const QString title = elideText(name, QFont(), format, pointsToPixels(maxWidthPoints));
-        msg.append("\n---\n" + command + "\n---");
+
+        // Print command with line numbers.
+        int lineNumber = 0;
+        const auto lines = command.split("\n");
+        const auto lineNumberWidth = std::log10(lines.size()) + 1;
+        for (const auto &line : lines)
+            msg.append(QString("\n%1. %2").arg(++lineNumber, lineNumberWidth).arg(line));
+
+        log(title + "\n" + msg);
         m_wnd->showMessage(title, msg, icon);
     }
 
@@ -160,29 +193,17 @@ void ActionHandler::actionDialogClosed(ActionDialog *dialog)
     m_lastActionDialogCommand = dialog->command();
 }
 
-void ActionHandler::addItems(const QStringList &items, const QString &tabName)
+void ActionHandler::addItems(const QStringList &items, const QString &format, const QString &tabName)
 {
     ClipboardBrowser *c = tabName.isEmpty() ? m_wnd->browser() : m_wnd->tab(tabName);
-    ClipboardBrowser::Lock lock(c);
-    foreach (const QString &item, items)
-        c->add(item);
+    for (const auto &item : items)
+        c->add( createDataMap(format, item) );
 
     if (m_lastAction) {
         if (m_lastAction == sender())
             c->setCurrent(items.size() - 1);
-        m_lastAction = NULL;
+        m_lastAction = nullptr;
     }
-}
-
-void ActionHandler::addItems(const QStringList &items, const QModelIndex &index)
-{
-    ClipboardBrowser *c = m_wnd->browserForItem(index);
-    if (c == NULL)
-        return;
-
-    QVariantMap dataMap;
-    dataMap.insert( mimeText, items.join(QString()).toUtf8() );
-    c->model()->setData(index, dataMap, contentType::updateData);
 }
 
 void ActionHandler::addItem(const QByteArray &data, const QString &format, const QString &tabName)
@@ -193,14 +214,14 @@ void ActionHandler::addItem(const QByteArray &data, const QString &format, const
     if (m_lastAction) {
         if (m_lastAction == sender())
             c->setCurrent(0);
-        m_lastAction = NULL;
+        m_lastAction = nullptr;
     }
 }
 
-void ActionHandler::addItem(const QByteArray &data, const QString &format, const QModelIndex &index)
+void ActionHandler::changeItem(const QByteArray &data, const QString &format, const QModelIndex &index)
 {
     ClipboardBrowser *c = m_wnd->browserForItem(index);
-    if (c == NULL)
+    if (c == nullptr)
         return;
 
     QVariantMap dataMap;

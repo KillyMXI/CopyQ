@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,8 +20,10 @@
 #ifndef TEST_UTILS_H
 #define TEST_UTILS_H
 
+#include "common/commandstatus.h"
+
 #include <QByteArray>
-#include <QDebug>
+#include <QFile>
 #include <QString>
 #include <QStringList>
 #include <QTest>
@@ -35,7 +37,10 @@
 do { \
     QByteArray errors_ = (ERRORS_OR_EMPTY); \
     if (!errors_.isEmpty()) { \
-      qWarning() << errors_; \
+      QFile ferr; \
+      ferr.open(stderr, QIODevice::WriteOnly); \
+      ferr.write(errors_ + "\n"); \
+      ferr.close(); \
       QVERIFY2(false, "Failed with errors above."); \
     } \
 } while (false)
@@ -43,12 +48,23 @@ do { \
 #define RUN(ARGUMENTS, STDOUT_EXPECTED) \
     TEST( m_test->runClient((Args() << ARGUMENTS), toByteArray(STDOUT_EXPECTED)) );
 
+#define RUN_WITH_INPUT(ARGUMENTS, STDOUT_EXPECTED, INPUT) \
+    TEST( m_test->runClient((Args() << ARGUMENTS), toByteArray(INPUT), toByteArray(STDOUT_EXPECTED)) );
+
+#define RUN_EXPECT_ERROR(ARGUMENTS, EXIT_CODE) \
+    TEST( m_test->runClientWithError((Args() << ARGUMENTS), (EXIT_CODE)) );
+
+#define RUN_EXPECT_ERROR_WITH_STDERR(ARGUMENTS, EXIT_CODE, STDERR_CONTAINS) \
+    TEST( m_test->runClientWithError((Args() << ARGUMENTS), (EXIT_CODE), toByteArray(STDERR_CONTAINS)) );
+
+#define WAIT_FOR_CLIPBOARD(DATA) \
+    QCOMPARE( waitUntilClipboardSet(DATA), QByteArray(DATA) )
+
+#define WAIT_FOR_CLIPBOARD2(DATA, MIME) \
+    QCOMPARE( waitUntilClipboardSet(DATA, MIME), QByteArray(DATA) )
+
 /// Skip rest of the tests
-#if QT_VERSION < 0x050000
-#   define SKIP(MESSAGE) QSKIP(MESSAGE, SkipAll)
-#else
-#   define SKIP(MESSAGE) QSKIP(MESSAGE)
-#endif
+#define SKIP(MESSAGE) QSKIP(MESSAGE, SkipAll)
 
 #define WAIT_UNTIL(ARGUMENTS, CONDITION, STDOUT_ACTUAL) \
 do { \
@@ -65,16 +81,17 @@ do { \
 do { \
     QByteArray out_; \
     const QByteArray expected_(OUTPUT); \
-    WAIT_UNTIL(ARGUMENTS, out_ == expected_, out_); \
+    SleepTimer t_(8000); \
+    do { \
+        TEST( m_test->getClientOutput((Args() << ARGUMENTS), &out_) ); \
+    } while (out_ != expected_ && t_.sleep()); \
+    QCOMPARE(out_, expected_); \
 } while(false)
 
 /// Interval to wait (in ms) until window is shown and focused.
 const int waitMsShow = 1000;
 
-/// Interval to wait (in ms) until search is complete.
-const int waitMsSearch = 250;
-
-typedef QStringList Args;
+using Args = QStringList;
 
 inline QByteArray toByteArray(const QString &text)
 {

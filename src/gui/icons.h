@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,12 +24,14 @@
 enum IconId {
     IconFirst = 0xf000,
     IconSearch = 0xf002,
+    IconUser = 0xf007,
     IconThList = 0xf00b,
     IconCheck = 0xf00c,
     IconRemove = 0xf00d,
     IconOff = 0xf011,
     IconCog = 0xf013,
     IconTrash = 0xf014,
+    IconHome = 0xf015,
     IconFileAlt = 0xf016,
     IconDownloadAlt = 0xf019,
     IconArrowCircleODown = 0xf01a,
@@ -42,8 +44,11 @@ enum IconId {
     IconVolumeUp = 0xf028,
     IconQRCode = 0xf029,
     IconTag = 0xf02b,
+    IconBook = 0xf02d,
     IconCamera = 0xf030,
     IconFont = 0xf031,
+    IconBold = 0xf032,
+    IconItalic = 0xf033,
     IconPicture = 0xf03e,
     IconPencil = 0xf040,
     IconEdit = 0xf044,
@@ -60,12 +65,15 @@ enum IconId {
     IconMinus = 0xf068,
     IconAsterisk = 0xf069,
     IconExclamationSign = 0xf06a,
+    IconGift = 0xf06b,
     IconEyeOpen = 0xf06e,
     IconEyeSlash = 0xf070,
     IconWarningSign = 0xf071,
     IconFolderOpen = 0xf07c,
     IconCogs = 0xf085,
+    IconThumbTack  = 0xf08d,
     IconUploadAlt = 0xf093,
+    IconSquareO = 0xf096,
     IconUnlock = 0xf09c,
     IconHandUp = 0xf0a6,
     IconGlobe = 0xf0ac,
@@ -73,11 +81,15 @@ enum IconId {
     IconLink = 0xf0c1,
     IconCopy = 0xf0c5,
     IconSave = 0xf0c7,
+    IconSquare = 0xf0c8,
     IconBars = 0xf0c9,
     IconListOl = 0xf0cb,
+    IconStrikethrough = 0xf0cc,
+    IconUnderline = 0xf0cd,
     IconColumns = 0xf0db,
     IconSortDown = 0xf0dd,
     IconSortUp = 0xf0de,
+    IconEnvelope = 0xf0e0,
     IconUndo = 0xf0e2,
     IconBolt = 0xf0e7,
     IconPaste = 0xf0ea,
@@ -92,9 +104,9 @@ enum IconId {
     IconSortByAlphabet = 0xf15d,
     IconSortByAlphabetAlt = 0xf15e,
     IconTerminal = 0xf120,
+    IconEraser = 0xf12d,
     IconEditSign = 0xf14b,
-    IconArchive = 0xf187,
-    IconLast = 0xf23a
+    IconArchive = 0xf187
 };
 
 #endif // ICONS_H

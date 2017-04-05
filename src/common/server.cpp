@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,7 +19,7 @@
 
 #include "server.h"
 
-#include "common/arguments.h"
+#include "common/common.h"
 #include "common/clientsocket.h"
 #include "common/client_server.h"
 #include "common/log.h"
@@ -67,7 +67,7 @@ bool tryAttach(QSharedMemory *shmem)
  */
 QObject *createSystemMutex(const QString &name, QObject *parent)
 {
-    QSharedMemory *shmem = new QSharedMemory(name, parent);
+    auto shmem = new QSharedMemory(name, parent);
 
     QSystemSemaphore createSharedMemoryGuard("shmem_create_" + name, 1);
     if (createSharedMemoryGuard.acquire()) {
@@ -91,37 +91,58 @@ QObject *createSystemMutex(const QString &name, QObject *parent)
         return shmem;
 
     delete shmem;
-    return NULL;
+    return nullptr;
 }
 
 } // namespace
 
 Server::Server(const QString &name, QObject *parent)
     : QObject(parent)
-    , m_server(new QLocalServer(this))
+    , m_server(new QLocalServer)
+    , m_systemMutex(createSystemMutex(name, this))
     , m_socketCount(0)
 {
-    if ( createSystemMutex(name, this) && !serverIsRunning(name) ) {
+    if ( m_systemMutex && !serverIsRunning(name) ) {
         QLocalServer::removeServer(name);
-        m_server->listen(name);
+        if ( !m_server->listen(name) )
+            log("Failed to create server: " + m_server->errorString(), LogError);
     }
 
-    qRegisterMetaType<Arguments>("Arguments");
     connect( qApp, SIGNAL(aboutToQuit()), SLOT(close()) );
+}
+
+Server::~Server()
+{
+    // Postpone destroying server, otherwise it crashes when re-creating server.
+    m_server->deleteLater();
 }
 
 void Server::start()
 {
-    while (m_server->hasPendingConnections())
-        onNewConnection();
-
     connect( m_server, SIGNAL(newConnection()),
              this, SLOT(onNewConnection()) );
+
+    while (m_server->hasPendingConnections())
+        onNewConnection();
 }
 
 bool Server::isListening() const
 {
     return m_server->isListening();
+}
+
+void Server::close()
+{
+    m_server->close();
+
+    if (m_socketCount > 0) {
+        COPYQ_LOG( QString("Waiting for %1 sockets to disconnect").arg(m_socketCount) );
+        while (m_socketCount > 0)
+            QCoreApplication::processEvents(QEventLoop::WaitForMoreEvents, 10);
+    }
+
+    delete m_systemMutex;
+    m_systemMutex = nullptr;
 }
 
 void Server::onNewConnection()
@@ -133,35 +154,17 @@ void Server::onNewConnection()
         log("Client is not connected!", LogError);
         socket->deleteLater();
     } else {
-        QScopedPointer<ClientSocket> clientSocket( new ClientSocket(socket) );
+        ++m_socketCount;
+        connect( socket, SIGNAL(disconnected()),
+                 this, SLOT(onSocketDestroyed()) );
 
-        const Arguments args = clientSocket->readArguments();
-        if ( !args.isEmpty() ) {
-            ++m_socketCount;
-            connect( clientSocket.data(), SIGNAL(destroyed()),
-                     this, SLOT(onSocketClosed()) );
-            connect( this, SIGNAL(destroyed()),
-                     clientSocket.data(), SLOT(close()) );
-            connect( this, SIGNAL(destroyed()),
-                     clientSocket.data(), SLOT(deleteAfterDisconnected()) );
-            emit newConnection( args, clientSocket.take() );
-        }
+        auto clientSocket = std::make_shared<ClientSocket>(socket);
+        emit newConnection(clientSocket);
     }
 }
 
-void Server::onSocketClosed()
+void Server::onSocketDestroyed()
 {
     Q_ASSERT(m_socketCount > 0);
     --m_socketCount;
-}
-
-void Server::close()
-{
-    m_server->close();
-
-    COPYQ_LOG( QString("Sockets open: %1").arg(m_socketCount) );
-    while (m_socketCount > 0)
-        QCoreApplication::processEvents();
-
-    deleteLater();
 }

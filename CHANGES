@@ -1,3 +1,96 @@
+v3.0.0
+- Pinned and protected items
+- Export/import tabs, configuration and commands in one file
+- Create and modify commands from script
+- Create temporary files from script
+- Create notifications with buttons from script
+- Take screenshots using script
+- Allow to process lines on stdout from execute() scriptable using a function
+- Safer and faster encrypt/decrypt commands (need to be re-added)
+- Improved menu scriptable function
+- Improved icon sharpness
+- Improved plugin architecture
+- Improved logging and displaying log
+- Performance and memory consumption improvements
+- Implemented copy() on OS X
+- Fixed focusing menu and windows on OS X
+- Fixed configuration folder path for portable version on Windows
+- Fixed opening menu for a tab
+- Fixed using correct GPG version for encryption
+- Fixed tray menu position in KDE/Plasma
+
+v2.9.0
+- Set text style in editor
+- Search in editor
+- Quick help in completion popup menu for commands
+- Easier text selection in item preview
+- Show whole text and unscaled image in item preview
+- Improved pasting to windows on Linux/X11
+- Fixed global shortcuts at application start on Linux/X11
+- Fixed closing application from installer on Windows
+- Fixed showing item preview at start
+- Fixed saving position of new tabs and tab lists
+
+v2.8.3
+- Search items from tray menu
+- Added support for animated gifs (played when selected)
+- Added special formats for automatic commands to sync and store clipboard
+- Added auto-completion for command editor
+- Added scriptable variables for MIME types
+- Fix encryption with new OpenPGP
+- Fix passing big data to commands on Windows
+
+v2.8.2
+- Simplify appearance of items with notes and tags
+- Support for drag'n'dropping images to more applications
+- Added list widget for custom dialog
+- Fixed opening windows on current screen
+- Fixed tray icon appearance on Linux
+- Fixed focusing tray menu from command
+- Fixed dialog button translation on Windows
+- Fixed passing big data to commands
+
+v2.8.1
+- All Qt messages are logged
+- Fixed and improved commands for Tags plugin
+- Fixed removing last items when changing item limit
+- Fixed library paths for OS X
+- Fixed pasting items on Windows
+- Fixed copying from script on Windows
+
+v2.8.0
+- Insert images in editor
+- Show simple items options
+- Item preview window
+- Move to Qt 5 on Windows and newer Linux distros
+- Faster item content listing
+- Simple filter for Log dialog
+- Smooth icons on OS X
+- Fixed system icons
+- Fixed pasting animated images
+- Fixed occasional crashes when finalizing commands with Qt 5
+- Fixed opening log speed on Windows
+- Lithuanian translation
+
+v2.7.1
+- Colorize items with command
+- Drag'n'drop items in selection order
+- Fixed item selection with "next" and "previous" commands
+- Fixed encrypting/decrypting items on Windows
+- Fixed occasional client crashes at exit
+- Fixed editor command on OS X
+
+v2.7.0
+- Log accessible from GUI
+- Performance and memory usage improvements
+- Added scriptable function to set current tab (setCurrentTab())
+- Added scriptable function to modify new items (setData())
+- Appearance fixes
+- Simplified window management
+- Improved pasting to current window on Windows
+- Window geometry fixes
+- Command with Enter shortcut overrides item activate action
+
 v2.6.1
 - Moved configuration from registry on Windows
 - Fixed shortcuts on Windows

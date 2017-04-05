@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -25,18 +25,37 @@ namespace Ui {
 class LogDialog;
 }
 
+class Decorator;
+
 class LogDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit LogDialog(QWidget *parent = NULL);
+    explicit LogDialog(QWidget *parent = nullptr);
     ~LogDialog();
 
-private:
-    void decorateLog();
+private slots:
+    void updateLog();
 
+    void showError(bool show);
+    void showWarning(bool show);
+    void showNote(bool show);
+    void showDebug(bool show);
+    void showTrace(bool show);
+
+private:
     Ui::LogDialog *ui;
+
+    Decorator *m_logDecorator;
+    Decorator *m_stringDecorator;
+    Decorator *m_threadNameDecorator;
+
+    bool m_showError;
+    bool m_showWarning;
+    bool m_showNote;
+    bool m_showDebug;
+    bool m_showTrace;
 };
 
 #endif // LOGDIALOG_H

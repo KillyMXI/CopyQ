@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -25,7 +25,7 @@
 #ifdef __OBJC__
 @class NSTimer;
 #else
-typedef void NSTimer;
+using NSTimer = void;
 #endif
 
 /**

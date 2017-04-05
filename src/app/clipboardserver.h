@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -32,7 +32,6 @@
 #include <QVariantMap>
 #include <QWidget>
 
-class Arguments;
 class ClientSocket;
 class ItemFactory;
 class RemoteProcess;
@@ -51,7 +50,7 @@ class ClipboardServer : public QObject, public App
     Q_OBJECT
 
 public:
-    ClipboardServer(int &argc, char **argv, const QString &sessionName = QString());
+    ClipboardServer(int &argc, char **argv, const QString &sessionName);
     ~ClipboardServer();
 
     /** Stop monitor application. */
@@ -84,22 +83,20 @@ signals:
     void terminateClientThreads();
 
 protected:
-    bool eventFilter(QObject *object, QEvent *ev);
+    bool eventFilter(QObject *object, QEvent *ev) override;
 
 private slots:
     /**
      * Execute command in different thread.
      */
-    void doCommand(
-            const Arguments &args, //!< Contains command and its arguments.
-            ClientSocket *client = NULL //!< For sending responses.
+    void doCommand(const ClientSocketPtr &client = nullptr //!< For sending responses.
             );
 
     /** New message from monitor process. */
     void newMonitorMessage(const QByteArray &message);
 
     /** An error occurred on monitor connection. */
-    void monitorConnectionError();
+    void monitorConnectionError(const QString &error);
 
     /** Shortcut was pressed on host system. */
     void shortcutActivated(QxtGlobalShortcut *shortcut);

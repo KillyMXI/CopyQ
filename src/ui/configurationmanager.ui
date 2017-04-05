@@ -28,6 +28,12 @@
      <property name="currentIndex">
       <number>0</number>
      </property>
+     <property name="elideMode">
+      <enum>Qt::ElideNone</enum>
+     </property>
+     <property name="usesScrollButtons">
+      <bool>true</bool>
+     </property>
      <widget class="QWidget" name="tabGeneral">
       <attribute name="title">
        <string>&amp;General</string>
@@ -46,8 +52,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>536</width>
-            <height>595</height>
+            <width>506</width>
+            <height>582</height>
            </rect>
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout_15">
@@ -295,8 +301,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>536</width>
-            <height>595</height>
+            <width>506</width>
+            <height>582</height>
            </rect>
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout_23">
@@ -360,16 +366,6 @@
                    <widget class="QCheckBox" name="checkBoxHideToolbarLabels">
                     <property name="text">
                      <string>Hide tool&amp;bar labels</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QCheckBox" name="checkBoxDisableTray">
-                    <property name="toolTip">
-                     <string>Don't show tray icon; minimize window when closed</string>
-                    </property>
-                    <property name="text">
-                     <string>Disabl&amp;e tray</string>
                     </property>
                    </widget>
                   </item>
@@ -556,8 +552,8 @@ Note: This is not be supported on all systems.</string>
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>526</width>
-            <height>322</height>
+            <width>536</width>
+            <height>567</height>
            </rect>
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout_16">
@@ -735,6 +731,18 @@ Note: Edited items can be saved with F2 disregarding this option.</string>
               </widget>
              </item>
              <item>
+              <widget class="QCheckBox" name="checkBoxShowSimpleItems">
+               <property name="toolTip">
+                <string>Show single line description of each item.
+
+Use Item Preview to display whole items.</string>
+               </property>
+               <property name="text">
+                <string>Sho&amp;w simple items</string>
+               </property>
+              </widget>
+             </item>
+             <item>
               <widget class="QGroupBox" name="groupBox_3">
                <property name="title">
                 <string>After item is activated (double-click or Enter key), copy it to clipboard and ...</string>
@@ -835,8 +843,8 @@ Note: Edited items can be saved with F2 disregarding this option.</string>
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>453</width>
-            <height>170</height>
+            <width>506</width>
+            <height>582</height>
            </rect>
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout_17">
@@ -867,6 +875,16 @@ Note: Edited items can be saved with F2 disregarding this option.</string>
                 </size>
                </property>
               </spacer>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBoxDisableTray">
+               <property name="toolTip">
+                <string>Don't show tray icon; minimize window when closed</string>
+               </property>
+               <property name="text">
+                <string>Disabl&amp;e tray</string>
+               </property>
+              </widget>
              </item>
              <item>
               <widget class="QCheckBox" name="checkBoxTrayShowCommands">
@@ -1040,8 +1058,8 @@ Note: Edited items can be saved with F2 disregarding this option.</string>
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>409</width>
-            <height>295</height>
+            <width>506</width>
+            <height>582</height>
            </rect>
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout_13">
@@ -1519,7 +1537,6 @@ Set to 0 to disable.</string>
   <tabstop>checkBoxHideTabs</tabstop>
   <tabstop>checkBoxHideToolbar</tabstop>
   <tabstop>checkBoxHideToolbarLabels</tabstop>
-  <tabstop>checkBoxDisableTray</tabstop>
   <tabstop>checkBoxTabTree</tabstop>
   <tabstop>checkBoxShowTabItemCount</tabstop>
   <tabstop>spinBoxTransparencyFocused</tabstop>
@@ -1530,11 +1547,13 @@ Set to 0 to disable.</string>
   <tabstop>spinBoxExpireTab</tabstop>
   <tabstop>lineEditEditor</tabstop>
   <tabstop>checkBoxEditCtrlReturn</tabstop>
+  <tabstop>checkBoxShowSimpleItems</tabstop>
   <tabstop>checkBoxMove</tabstop>
   <tabstop>checkBoxActivateCloses</tabstop>
   <tabstop>checkBoxActivateFocuses</tabstop>
   <tabstop>checkBoxActivatePastes</tabstop>
   <tabstop>scrollArea_2</tabstop>
+  <tabstop>checkBoxDisableTray</tabstop>
   <tabstop>checkBoxTrayShowCommands</tabstop>
   <tabstop>spinBoxTrayItems</tabstop>
   <tabstop>checkBoxMenuTabIsCurrent</tabstop>

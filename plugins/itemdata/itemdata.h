@@ -24,7 +24,8 @@
 #include "gui/icons.h"
 
 #include <QLabel>
-#include <QScopedPointer>
+
+#include <memory>
 
 namespace Ui {
 class ItemDataSettings;
@@ -40,16 +41,16 @@ public:
     ItemData(const QModelIndex &index, int maxBytes, QWidget *parent);
 
 protected:
-    virtual void highlight(const QRegExp &re, const QFont &highlightFont,
-                           const QPalette &highlightPalette);
+    void highlight(const QRegExp &re, const QFont &highlightFont,
+                           const QPalette &highlightPalette) override;
 
-    virtual QWidget *createEditor(QWidget *) const { return NULL; }
+    QWidget *createEditor(QWidget *) const override { return nullptr; }
 
-    virtual void mousePressEvent(QMouseEvent *e);
+    void mousePressEvent(QMouseEvent *e) override;
 
-    virtual void mouseDoubleClickEvent(QMouseEvent *e);
+    void mouseDoubleClickEvent(QMouseEvent *e) override;
 
-    virtual void contextMenuEvent(QContextMenuEvent *e);
+    void contextMenuEvent(QContextMenuEvent *e) override;
 };
 
 class ItemDataLoader : public QObject, public ItemLoaderInterface
@@ -62,28 +63,30 @@ public:
     ItemDataLoader();
     ~ItemDataLoader();
 
-    virtual ItemWidget *create(const QModelIndex &index, QWidget *parent) const;
+    ItemWidget *create(const QModelIndex &index, QWidget *parent, bool preview) const override;
 
-    virtual QString id() const { return "itemdata"; }
-    virtual QString name() const { return tr("Data"); }
-    virtual QString author() const { return QString(); }
-    virtual QString description() const { return tr("Various data to save."); }
-    virtual QVariant icon() const { return QVariant(IconFileText); }
+    int priority() const override { return -20; }
 
-    virtual QStringList formatsToSave() const;
+    QString id() const override { return "itemdata"; }
+    QString name() const override { return tr("Data"); }
+    QString author() const override { return QString(); }
+    QString description() const override { return tr("Various data to save."); }
+    QVariant icon() const override { return QVariant(IconFileText); }
 
-    virtual QVariantMap applySettings();
+    QStringList formatsToSave() const override;
 
-    virtual void loadSettings(const QVariantMap &settings) { m_settings = settings; }
+    QVariantMap applySettings() override;
 
-    virtual QWidget *createSettingsWidget(QWidget *parent);
+    void loadSettings(const QVariantMap &settings) override { m_settings = settings; }
+
+    QWidget *createSettingsWidget(QWidget *parent) override;
 
 private slots:
     void on_treeWidgetFormats_itemActivated(QTreeWidgetItem *item, int column);
 
 private:
     QVariantMap m_settings;
-    QScopedPointer<Ui::ItemDataSettings> ui;
+    std::unique_ptr<Ui::ItemDataSettings> ui;
 };
 
 #endif // ITEMDATA_H

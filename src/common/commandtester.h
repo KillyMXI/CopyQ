@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -33,7 +33,7 @@ class CommandTester : public QObject
 {
     Q_OBJECT
 public:
-    explicit CommandTester(QObject *parent = NULL);
+    explicit CommandTester(QObject *parent = nullptr);
 
     /// Stop current processing and clear commands and data.
     void abort();
@@ -45,7 +45,7 @@ public:
 
     bool hasCommands() const;
 
-    const QVariantMap &data() const;
+    QVariantMap data() const;
 
     /** Start next test after action finishes and update data from action. */
     void waitForAction(Action *action);
@@ -55,6 +55,7 @@ public slots:
 
 signals:
     void commandPassed(const Command &command, bool passed);
+    void requestActionStart(Action *action);
 
 private slots:
     void actionFinished();

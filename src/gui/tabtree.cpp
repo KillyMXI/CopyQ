@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,6 +20,7 @@
 #include "tabtree.h"
 
 #include "common/common.h"
+#include "common/display.h"
 #include "common/mimetypes.h"
 #include "gui/iconfactory.h"
 #include "gui/iconfont.h"
@@ -32,12 +33,12 @@
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QHBoxLayout>
+#include <QTreeWidgetItemIterator>
 
 namespace {
 
 enum {
-    DataIndex = Qt::UserRole,
-    DataText,
+    DataText = Qt::UserRole,
     DataItemCount
 };
 
@@ -64,11 +65,11 @@ void updateItemSize(QTreeWidgetItem *item)
 
 void setItemWidgetSelected(QTreeWidgetItem *item)
 {
-    if (item == NULL)
+    if (item == nullptr)
         return;
 
     QTreeWidget *parent = item->treeWidget();
-    if (parent == NULL)
+    if (parent == nullptr)
         return;
 
     QWidget *w = parent->itemWidget(item, 0);
@@ -80,7 +81,7 @@ void setItemWidgetSelected(QTreeWidgetItem *item)
 
         bool selected = parent->currentItem() == item;
 
-        foreach (QWidget *child, w->findChildren<QWidget *>()) {
+        for (auto child : w->findChildren<QWidget *>()) {
             child->setProperty("CopyQ_selected", selected);
             style->unpolish(child);
             style->polish(child);
@@ -92,7 +93,7 @@ void setItemWidgetSelected(QTreeWidgetItem *item)
 
 QTreeWidgetItem *findLastTreeItem(const QTreeWidget &tree, QStringList *pathComponents)
 {
-    QTreeWidgetItem *parentItem = NULL;
+    QTreeWidgetItem *parentItem = nullptr;
 
     if ( !pathComponents->isEmpty() ) {
         const QString &text = pathComponents->first();
@@ -105,12 +106,12 @@ QTreeWidgetItem *findLastTreeItem(const QTreeWidget &tree, QStringList *pathComp
         }
     }
 
-    if (parentItem != NULL) {
+    if (parentItem != nullptr) {
         pathComponents->pop_front();
 
         while ( !pathComponents->isEmpty() ) {
             const QString &text = pathComponents->first();
-            QTreeWidgetItem *item = NULL;
+            QTreeWidgetItem *item = nullptr;
 
             for (int i = 0; i < parentItem->childCount(); ++i) {
                 if ( parentItem->child(i)->data(0, DataText).toString() == text ) {
@@ -119,7 +120,7 @@ QTreeWidgetItem *findLastTreeItem(const QTreeWidget &tree, QStringList *pathComp
                 }
             }
 
-            if (item == NULL)
+            if (item == nullptr)
                 break;
 
             parentItem = item;
@@ -130,14 +131,9 @@ QTreeWidgetItem *findLastTreeItem(const QTreeWidget &tree, QStringList *pathComp
     return parentItem;
 }
 
-bool canDrop(const QMimeData &data)
-{
-    return data.hasFormat(mimeItems) || data.hasText() || data.hasImage() || data.hasUrls();
-}
-
 QTreeWidgetItem *dropItemsTarget(const QDropEvent &event, const QTreeWidget &parent)
 {
-    return canDrop( *event.mimeData() ) ? parent.itemAt( event.pos() ) : NULL;
+    return canDropToTab(event) ? parent.itemAt( event.pos() ) : nullptr;
 }
 
 int itemLabelPadding()
@@ -160,7 +156,7 @@ public:
         : QWidget(item->treeWidget())
         , m_treeWidget(item->treeWidget())
         , m_label(createLabel("tab_tree_item", this))
-        , m_labelItemCount(NULL)
+        , m_labelItemCount(nullptr)
         , m_layout(new QHBoxLayout(this))
     {
         m_label->setBuddy(m_treeWidget);
@@ -190,7 +186,7 @@ public:
     {
         if (itemCount.isEmpty()) {
             delete m_labelItemCount;
-            m_labelItemCount = NULL;
+            m_labelItemCount = nullptr;
         } else {
             if (!m_labelItemCount) {
                 m_labelItemCount = createLabel("tab_item_counter", this);
@@ -204,10 +200,11 @@ public:
     }
 
 protected:
-    bool eventFilter(QObject *, QEvent *event)
+    bool eventFilter(QObject *, QEvent *event) override
     {
         if ( event->type() == QEvent::Shortcut ) {
-            foreach ( QTreeWidgetItem *item, m_treeWidget->findItems(QString(), Qt::MatchContains | Qt::MatchRecursive) ) {
+            for ( QTreeWidgetItemIterator it(m_treeWidget->topLevelItem(0)); *it; ++it ) {
+                auto item = *it;
                 if ( m_treeWidget->itemWidget(item, 0) == this ) {
                     m_treeWidget->setCurrentItem(item);
                     return true;
@@ -280,139 +277,23 @@ TabTree::TabTree(QWidget *parent)
 
     connect( this, SIGNAL(itemCollapsed(QTreeWidgetItem*)), SLOT(updateSize()) );
     connect( this, SIGNAL(itemExpanded(QTreeWidgetItem*)), SLOT(updateSize()) );
+
+    initSingleShotTimer( &m_timerUpdate, 0, this, SLOT(doUpdateSize()) );
 }
 
-void TabTree::insertTab(const QString &path, int index, bool selected)
+QString TabTree::getCurrentTabPath() const
 {
-    QStringList pathComponents = path.split('/');
-    QTreeWidgetItem *item = findLastTreeItem(*this, &pathComponents);
-
-    foreach (const QString &text, pathComponents) {
-        QTreeWidgetItem *parent = item;
-
-        if (parent != NULL) {
-            int to = 0;
-            for ( ; to < parent->childCount(); ++to ) {
-                 const int index2 = getTabIndex(parent->child(to));
-                 if (index2 != -1 && index < index2)
-                     break;
-            }
-            int from = parent->childCount();
-            item = new QTreeWidgetItem(parent);
-            if (from != to)
-                parent->insertChild(to, parent->takeChild(from));
-        } else {
-            int to = 0;
-            for ( ; to < topLevelItemCount(); ++to ) {
-                 const int index2 = getTabIndex(topLevelItem(to));
-                 if (index2 != -1 && index < index2)
-                     break;
-            }
-            int from = topLevelItemCount();
-            item = new QTreeWidgetItem(this);
-            if (from != to)
-                insertTopLevelItem(to, takeTopLevelItem(from));
-        }
-
-        item->setExpanded(true);
-        item->setData(0, DataIndex, -1);
-        item->setData(0, DataText, text);
-
-        const QIcon icon = getIconForTabName( getTabPath(item) );
-        item->setIcon(0, icon);
-
-        labelItem(item);
-    }
-
-    Q_ASSERT(item != NULL);
-    item->setData(0, DataIndex, index);
-
-    if (selected)
-        setCurrentItem(item);
-
-    updateSize();
+    return getTabPath( currentItem() );
 }
 
-void TabTree::removeTab(int index)
+bool TabTree::isTabGroup(const QString &tab) const
 {
-    QTreeWidgetItem *item = findTreeItem(index);
-    if (item == NULL)
-        return;
-
-    if (item->childCount() == 0)
-        deleteItem(item);
-    else
-        item->setData(0, DataIndex, -1);
-
-    shiftIndexesBetween(index + 1);
-    updateSize();
+    return isTabGroup( findTreeItem(tab) );
 }
 
-QTreeWidgetItem *TabTree::findTreeItem(int index) const
+QString TabTree::tabText(int tabIndex) const
 {
-    QList<QTreeWidgetItem *> items = findItems(QString(), Qt::MatchContains | Qt::MatchRecursive);
-    for (int i = items.size() - 1; i >= 0; --i) {
-        if ( getTabIndex(items[i]) == index )
-            return items[i];
-    }
-
-    return NULL;
-}
-
-QTreeWidgetItem *TabTree::findTreeItem(const QString &path) const
-{
-    QStringList pathComponents = path.split('/');
-    QTreeWidgetItem *parentItem = findLastTreeItem(*this, &pathComponents);
-    return pathComponents.isEmpty() ? parentItem : NULL;
-}
-
-int TabTree::getTabIndex(const QTreeWidgetItem *item) const
-{
-    return (item == NULL) ? -1 : item->data(0, DataIndex).toInt();
-}
-
-QString TabTree::getTabPath(const QTreeWidgetItem *item) const
-{
-    QString result;
-    const QTreeWidgetItem *parent = item;
-
-    while (parent != NULL) {
-        const QString part = parent->data(0, DataText).toString();
-        result.prepend('/');
-        result.prepend(part);
-        parent = parent->parent();
-    }
-
-    result.chop(1);
-
-    return result;
-}
-
-bool TabTree::isTabGroup(const QTreeWidgetItem *item) const
-{
-    return item != NULL && item->childCount() > 0;
-}
-
-bool TabTree::isEmptyTabGroup(const QTreeWidgetItem *item) const
-{
-    return item->childCount() == 0 && getTabIndex(item) < 0;
-}
-
-void TabTree::moveTab(int from, int to)
-{
-    if (from == to)
-        return;
-
-    QTreeWidgetItem *item = findTreeItem(from);
-    if (item == NULL)
-        return;
-
-    if (from < to)
-        shiftIndexesBetween(from + 1, to, -1);
-    else
-        shiftIndexesBetween(to, from - 1, 1);
-
-    item->setData(0, DataIndex, to);
+    return getTabPath( findTreeItem(tabIndex) );
 }
 
 void TabTree::setTabText(int tabIndex, const QString &tabText)
@@ -424,12 +305,12 @@ void TabTree::setTabText(int tabIndex, const QString &tabText)
         return;
 
     const QString itemCount = item->data(0, DataItemCount).toString();
-    bool isCurrent = item == currentItem();
-
-    insertTab(tabText, tabIndex, isCurrent);
+    insertTab(tabIndex, tabText);
+    if (item == currentItem())
+        setCurrentTab(tabIndex);
 
     // Remove old item if it's an empty group.
-    item->setData(0, DataIndex, -1);
+    m_tabs.removeOne(item);
     if ( isEmptyTabGroup(item) )
         deleteItem(item);
 
@@ -460,32 +341,6 @@ void TabTree::setTabItemCount(const QString &tabName, const QString &itemCount)
     updateSize();
 }
 
-void TabTree::setCollapsedTabs(const QStringList &collapsedPaths)
-{
-    foreach (const QString &path, collapsedPaths) {
-        QTreeWidgetItem *item = findTreeItem(path);
-        if ( isTabGroup(item) )
-            item->setExpanded(false);
-    }
-}
-
-QStringList TabTree::collapsedTabs() const
-{
-    QStringList tabs;
-
-    foreach ( QTreeWidgetItem *item, findItems(QString(), Qt::MatchContains | Qt::MatchRecursive) ) {
-        if ( isTabGroup(item) && !item->isExpanded() )
-            tabs.append( getTabPath(item) );
-    }
-
-    return tabs;
-}
-
-QSize TabTree::sizeHint() const
-{
-    return minimumSizeHint();
-}
-
 void TabTree::updateTabIcon(const QString &tabName)
 {
     QTreeWidgetItem *item = findTreeItem(tabName);
@@ -498,10 +353,199 @@ void TabTree::updateTabIcon(const QString &tabName)
     updateSize();
 }
 
+void TabTree::insertTab(int index, const QString &path)
+{
+    QStringList pathComponents = path.split('/');
+    QTreeWidgetItem *item = findLastTreeItem(*this, &pathComponents);
+    const bool selectTab = topLevelItemCount() == 0;
+
+    for (const auto &text : pathComponents) {
+        QTreeWidgetItem *parent = item;
+
+        if (parent != nullptr) {
+            int to = 0;
+            for ( ; to < parent->childCount(); ++to ) {
+                 const int index2 = getTabIndex(parent->child(to));
+                 if (index2 != -1 && index < index2)
+                     break;
+            }
+            int from = parent->childCount();
+            item = new QTreeWidgetItem(parent);
+            if (from != to)
+                parent->insertChild(to, parent->takeChild(from));
+        } else {
+            int to = 0;
+            for ( ; to < topLevelItemCount(); ++to ) {
+                 const int index2 = getTabIndex(topLevelItem(to));
+                 if (index2 != -1 && index < index2)
+                     break;
+            }
+            int from = topLevelItemCount();
+            item = new QTreeWidgetItem(this);
+            if (from != to)
+                insertTopLevelItem(to, takeTopLevelItem(from));
+        }
+
+        item->setExpanded(true);
+        item->setData(0, DataText, text);
+
+        const QIcon icon = getIconForTabName( getTabPath(item) );
+        item->setIcon(0, icon);
+
+        labelItem(item);
+    }
+
+    Q_ASSERT(item != nullptr);
+    m_tabs.insert(index, item);
+
+    if (selectTab)
+        setCurrentItem(item);
+
+    updateSize();
+}
+
+void TabTree::removeTab(int index)
+{
+    QTreeWidgetItem *item = findTreeItem(index);
+    if (item == nullptr)
+        return;
+
+    m_tabs.removeOne(item);
+    if (item->childCount() == 0)
+        deleteItem(item);
+
+    updateSize();
+}
+
+void TabTree::moveTab(int from, int to)
+{
+    if (from == to)
+        return;
+
+    QTreeWidgetItem *item = findTreeItem(from);
+    if (item == nullptr)
+        return;
+
+    m_tabs.removeOne(item);
+    m_tabs.insert(to, item);
+}
+
+void TabTree::updateCollapsedTabs(QStringList *tabs) const
+{
+    tabs->clear();
+    for ( QTreeWidgetItemIterator it(topLevelItem(0)); *it; ++it ) {
+        auto item = *it;
+        if ( isTabGroup(item) && !item->isExpanded() )
+            tabs->append( getTabPath(item) );
+    }
+}
+
+void TabTree::setCollapsedTabs(const QStringList &collapsedPaths)
+{
+    for (const auto &path : collapsedPaths) {
+        QTreeWidgetItem *item = findTreeItem(path);
+        if ( isTabGroup(item) )
+            item->setExpanded(false);
+    }
+}
+
 void TabTree::updateTabIcons()
 {
-    foreach ( QTreeWidgetItem *item, findItems(QString(), Qt::MatchContains | Qt::MatchRecursive) )
-        updateTabIcon( getTabPath(item) );
+    for ( QTreeWidgetItemIterator it(topLevelItem(0)); *it; ++it )
+        updateTabIcon( getTabPath(*it) );
+}
+
+void TabTree::nextTab()
+{
+    QTreeWidgetItem *item = currentItem();
+    if (item != nullptr)
+        item = itemBelow(item);
+
+    if (item == nullptr)
+        item = topLevelItem(0);
+
+    if (item != nullptr)
+        setCurrentItem(item);
+}
+
+void TabTree::previousTab()
+{
+    QTreeWidgetItem *item = currentItem();
+    if (item != nullptr)
+        item = itemAbove(item);
+
+    if (item == nullptr) {
+        item = topLevelItem( topLevelItemCount() - 1 );
+        while ( isTabGroup(item) && item->isExpanded() )
+            item = item->child( item->childCount() - 1 );
+    }
+
+    if (item != nullptr)
+        setCurrentItem(item);
+}
+
+void TabTree::setCurrentTab(int index)
+{
+    if (index < 0)
+        return;
+
+    QTreeWidgetItem *item = findTreeItem(index);
+    if (item != nullptr)
+        setCurrentItem(item);
+}
+
+void TabTree::adjustSize()
+{
+    updateSize();
+}
+
+QTreeWidgetItem *TabTree::findTreeItem(int index) const
+{
+    return m_tabs.value(index);
+}
+
+QTreeWidgetItem *TabTree::findTreeItem(const QString &path) const
+{
+    QStringList pathComponents = path.split('/');
+    QTreeWidgetItem *parentItem = findLastTreeItem(*this, &pathComponents);
+    return pathComponents.isEmpty() ? parentItem : nullptr;
+}
+
+int TabTree::getTabIndex(const QTreeWidgetItem *item) const
+{
+    return (item == nullptr) ? -1 : m_tabs.indexOf( const_cast<QTreeWidgetItem*>(item) );
+}
+
+QString TabTree::getTabPath(const QTreeWidgetItem *item) const
+{
+    QString result;
+    const QTreeWidgetItem *parent = item;
+
+    while (parent != nullptr) {
+        const QString part = parent->data(0, DataText).toString();
+        result.prepend('/');
+        result.prepend(part);
+        parent = parent->parent();
+    }
+
+    result.chop(1);
+
+    return result;
+}
+
+bool TabTree::isTabGroup(const QTreeWidgetItem *item) const
+{
+    return item != nullptr && item->childCount() > 0;
+}
+
+bool TabTree::isEmptyTabGroup(const QTreeWidgetItem *item) const
+{
+    return item->childCount() == 0 && getTabIndex(item) < 0;
+}
+
+QSize TabTree::sizeHint() const
+{
+    return minimumSizeHint();
 }
 
 void TabTree::contextMenuEvent(QContextMenuEvent *event)
@@ -512,8 +556,8 @@ void TabTree::contextMenuEvent(QContextMenuEvent *event)
 
 void TabTree::dragEnterEvent(QDragEnterEvent *event)
 {
-    if ( canDrop(*event->mimeData()) ) {
-        event->acceptProposedAction();
+    if ( canDropToTab(*event) ) {
+        acceptDrag(event);
     } else {
         QTreeWidget::dragEnterEvent(event);
         // Workaround for QTBUG-44939 (Qt 5.4): Don't ignore successive drag move events.
@@ -524,7 +568,7 @@ void TabTree::dragEnterEvent(QDragEnterEvent *event)
 void TabTree::dragMoveEvent(QDragMoveEvent *event)
 {
     if ( dropItemsTarget(*event, *this) )
-        event->acceptProposedAction();
+        acceptDrag(event);
     else if ( itemAt(event->pos()) )
         QTreeWidget::dragMoveEvent(event);
     else
@@ -533,13 +577,14 @@ void TabTree::dragMoveEvent(QDragMoveEvent *event)
 
 void TabTree::dropEvent(QDropEvent *event)
 {
-    QTreeWidgetItem *current = currentItem();
-    if (current == NULL)
+    const auto current = currentItem();
+    if (current == nullptr)
         return;
 
-    QTreeWidgetItem *item = dropItemsTarget(*event, *this);
-    if (item) {
-        emit dropItems( getTabPath(item), event );
+    const auto targetItem = dropItemsTarget(*event, *this);
+    if (targetItem) {
+        acceptDrag(event);
+        emit dropItems( getTabPath(targetItem), event->mimeData() );
     } else if ( itemAt(event->pos()) ) {
         const QString oldPrefix = getTabPath(current);
 
@@ -550,36 +595,39 @@ void TabTree::dropEvent(QDropEvent *event)
         blockSignals(false);
 
         // Rename moved item if non-unique.
-        QStringList tabs;
-        QTreeWidgetItem *parent = current->parent();
+        QStringList uniqueTabNames;
+        const auto parent = current->parent();
         for (int i = 0, count = parent ? parent->childCount() : topLevelItemCount(); i < count; ++i) {
             QTreeWidgetItem *sibling = parent ? parent->child(i) : topLevelItem(i);
             if (sibling != current)
-                tabs.append( getTabPath(sibling) );
+                uniqueTabNames.append( getTabPath(sibling) );
         }
 
-        QString newPrefix = getTabPath(current);
-        if ( tabs.contains(newPrefix) ) {
-            renameToUnique(&newPrefix, tabs);
+        auto newPrefix = getTabPath(current);
+        if ( uniqueTabNames.contains(newPrefix) ) {
+            renameToUnique(&newPrefix, uniqueTabNames);
             const QString text = newPrefix.mid( newPrefix.lastIndexOf(QChar('/')) + 1 );
             current->setData(0, DataText, text);
             labelItem(current);
         }
 
+        QList<QTreeWidgetItem*> newTabs;
         QList<int> indexes;
-        foreach ( QTreeWidgetItem *item, findItems(QString(), Qt::MatchContains | Qt::MatchRecursive) ) {
+        for ( QTreeWidgetItemIterator it(topLevelItem(0)); *it; ++it ) {
+            auto item = *it;
             // Remove empty groups.
             if ( isEmptyTabGroup(item) ) {
                 deleteItem(item);
             } else {
                 const int oldIndex = getTabIndex(item);
-                if (oldIndex >= 0) {
-                    item->setData(0, DataIndex, indexes.size());
+                if (oldIndex != -1) {
+                    newTabs.append(item);
                     indexes.append(oldIndex);
                 }
             }
         }
 
+        m_tabs = std::move(newTabs);
         emit tabsMoved(oldPrefix, newPrefix, indexes);
 
         updateSize();
@@ -633,6 +681,11 @@ void TabTree::onCurrentItemChanged(QTreeWidgetItem *current, QTreeWidgetItem *pr
 
 void TabTree::updateSize()
 {
+    m_timerUpdate.start();
+}
+
+void TabTree::doUpdateSize()
+{
     doItemsLayout();
 
     const QMargins margins = contentsMargins();
@@ -658,59 +711,11 @@ void TabTree::requestTabMenu(const QPoint &itemPosition, const QPoint &menuPosit
     emit tabMenuRequested(menuPosition, tabPath);
 }
 
-void TabTree::shiftIndexesBetween(int from, int to, int how)
-{
-    foreach ( QTreeWidgetItem *item, findItems(QString(), Qt::MatchContains | Qt::MatchRecursive) ) {
-        const int oldIndex = getTabIndex(item);
-        if (oldIndex >= from && (to == -1 || oldIndex <= to))
-            item->setData(0, DataIndex, oldIndex + how);
-    }
-}
-
-void TabTree::setCurrentTabIndex(int index)
-{
-    if (index < 0)
-        return;
-
-    QTreeWidgetItem *item = findTreeItem(index);
-    if (item != NULL)
-        setCurrentItem(item);
-}
-
-void TabTree::nextTreeItem()
-{
-    QTreeWidgetItem *item = currentItem();
-    if (item != NULL)
-        item = itemBelow(item);
-
-    if (item == NULL)
-        item = topLevelItem(0);
-
-    if (item != NULL)
-        setCurrentItem(item);
-}
-
-void TabTree::previousTreeItem()
-{
-    QTreeWidgetItem *item = currentItem();
-    if (item != NULL)
-        item = itemAbove(item);
-
-    if (item == NULL) {
-        item = topLevelItem( topLevelItemCount() - 1 );
-        while ( isTabGroup(item) && item->isExpanded() )
-            item = item->child( item->childCount() - 1 );
-    }
-
-    if (item != NULL)
-        setCurrentItem(item);
-}
-
 void TabTree::deleteItem(QTreeWidgetItem *item)
 {
     // Recursively remove empty parent item.
     QTreeWidgetItem *parent = item->parent();
-    while (parent != NULL && parent->childCount() == 1 && getTabIndex(parent) < 0) {
+    while (parent != nullptr && parent->childCount() == 1 && getTabIndex(parent) < 0) {
         item = parent;
         parent = item->parent();
     }

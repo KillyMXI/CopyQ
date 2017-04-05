@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,7 +22,7 @@
 
 #include "common/sleeptimer.h"
 
-#include <QSharedPointer>
+#include <memory>
 
 class QStringList;
 
@@ -40,7 +40,7 @@ public:
         ReadErrorsWithoutScriptException = 2
     };
 
-    virtual ~TestInterface() {}
+    virtual ~TestInterface() = default;
 
     /// Start or restart GUI server and return true if successful.
     virtual QByteArray startServer() = 0;
@@ -52,8 +52,8 @@ public:
     virtual bool isServerRunning() = 0;
 
     /// Run client with given @a arguments and input and read outputs and return exit code.
-    virtual int run(const QStringList &arguments, QByteArray *stdoutData = NULL,
-                    QByteArray *stderrData = NULL, const QByteArray &in = QByteArray()) = 0;
+    virtual int run(const QStringList &arguments, QByteArray *stdoutData = nullptr,
+                    QByteArray *stderrData = nullptr, const QByteArray &in = QByteArray()) = 0;
 
     /// Run client with given @a arguments and read all errors/warnings.
     virtual QByteArray runClient(const QStringList &arguments, const QByteArray &stdoutExpected,
@@ -75,7 +75,13 @@ public:
      */
     virtual QByteArray readServerErrors(ReadStderrFlag flag = ReadErrors) = 0;
 
-    /// Init test.
+    /// Init test case. Return error string on error.
+    virtual QByteArray initTestCase() = 0;
+
+    /// Clean up test case. Return error string on error.
+    virtual QByteArray cleanupTestCase() = 0;
+
+    /// Init test. Return error string on error.
     virtual QByteArray init() = 0;
 
     /// Clean up tabs and items. Return error string on error.
@@ -88,6 +94,6 @@ public:
     virtual QString shortcutToRemove() = 0;
 };
 
-typedef QSharedPointer<TestInterface> TestInterfacePtr;
+using TestInterfacePtr = std::shared_ptr<TestInterface>;
 
 #endif // TESTINTERFACE_H

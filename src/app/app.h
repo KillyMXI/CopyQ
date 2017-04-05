@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,18 +20,17 @@
 #ifndef APP_H
 #define APP_H
 
-#include <QScopedPointer>
-#include <QString>
-
 class QCoreApplication;
+class QString;
 
 /** Application class. */
 class App
 {
 public:
     explicit App(
+            const QString &threadName,
             QCoreApplication *application,
-            const QString &sessionName = QString()
+            const QString &sessionName
             );
 
     virtual ~App();
@@ -55,8 +54,9 @@ public:
     bool wasClosed() const;
 
 private:
-    QScopedPointer<QCoreApplication> m_app;
+    QCoreApplication *m_app;
     int m_exitCode;
+    bool m_started;
     bool m_closed;
 };
 

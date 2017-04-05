@@ -1,17 +1,33 @@
-os:
-  - linux
-  - osx
-
 language: cpp
 
-compiler:
-  - gcc
-  - clang
-
 matrix:
-  exclude:
+  include:
     - os: osx
+      compiler: clang
+
+    - os: linux
       compiler: gcc
+      env:
+        - COMPILER=g++-4.8
+        - GCOV=gcov-4.8
+      addons:
+        apt:
+          sources:
+          - ubuntu-toolchain-r-test
+          packages:
+          - g++-4.8
+
+    - os: linux
+      compiler: clang
+      env:
+        - COMPILER=clang++-3.6
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-precise-3.6
+          packages:
+            - clang-3.6
 
 cache:
     apt: true
@@ -20,16 +36,16 @@ cache:
     - $HOME/.wheelhouse
 
 before_install:
-  - utils/travis-before-install-${TRAVIS_OS_NAME}.sh
+  - utils/travis/before-install-${TRAVIS_OS_NAME}.sh
 
 install:
-  - utils/travis-install-deps-${TRAVIS_OS_NAME}.sh
+  - utils/travis/install-${TRAVIS_OS_NAME}.sh
 
 script:
-  - utils/build-${TRAVIS_OS_NAME}.sh
+  - utils/travis/script-${TRAVIS_OS_NAME}.sh
 
 after_success:
-  - utils/after_build-${TRAVIS_OS_NAME}.sh
+  - utils/travis/after_success-${TRAVIS_OS_NAME}.sh
 
 deploy:
   provider: releases
@@ -38,6 +54,7 @@ deploy:
   file: 'build/*.dmg'
   file_glob: true
   skip_cleanup: true
+  overwrite: true
   on:
     condition: "$TRAVIS_OS_NAME = osx"
     tags: true

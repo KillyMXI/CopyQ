@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -52,77 +52,6 @@ QString methodName(const QMetaMethod &method)
     return name.remove(index, name.length() - index);
 }
 
-QStringList scriptableKeywords()
-{
-    return QStringList()
-            << "break"
-            << "do"
-            << "instanceof"
-            << "typeof"
-            << "case"
-            << "else"
-            << "new"
-            << "var"
-            << "catch"
-            << "finally"
-            << "return"
-            << "void"
-            << "continue"
-            << "for"
-            << "switch"
-            << "while"
-            << "debugger"
-            << "function"
-            << "this"
-            << "with"
-            << "default"
-            << "if"
-            << "throw"
-            << "delete"
-            << "in"
-            << "try"
-               ;
-}
-
-QStringList scriptableFunctions()
-{
-    QStringList result;
-
-    QMetaObject scriptableMetaObject = Scriptable::staticMetaObject;
-    for (int i = 0; i < scriptableMetaObject.methodCount(); ++i) {
-        QMetaMethod method = scriptableMetaObject.method(i);
-
-        if (method.methodType() == QMetaMethod::Slot && method.access() == QMetaMethod::Public) {
-            const QString name = methodName(method);
-            if (name != "deleteLater")
-                result.append(name);
-        }
-    }
-
-    return result;
-}
-
-/// Constructors and functions from ECMA specification supported by Qt plus ByteArray.
-QStringList scriptableObjects()
-{
-    QStringList result;
-    result.append("ByteArray");
-    result.append("Dir");
-    result.append("File");
-
-    QScriptEngine engine;
-
-    QScriptValue globalObject = engine.globalObject();
-    QScriptValueIterator it(globalObject);
-
-    while (it.hasNext()) {
-        it.next();
-        result.append(it.name());
-    }
-
-    return result;
-}
-
 QRegExp commandLabelRegExp()
 {
     return QRegExp(
@@ -166,6 +95,7 @@ public:
         : QSyntaxHighlighter(parent)
         , m_editor(editor)
         , m_reObjects(createRegExp(scriptableObjects()))
+        , m_reProperties(createRegExp(scriptableProperties()))
         , m_reFunctions(createRegExp(scriptableFunctions()))
         , m_reKeywords(createRegExp(scriptableKeywords()))
         , m_reLabels(commandLabelRegExp())
@@ -174,13 +104,18 @@ public:
     }
 
 protected:
-    void highlightBlock(const QString &text)
+    void highlightBlock(const QString &text) override
     {
         m_bgColor = getDefaultIconColor(*m_editor);
 
         QTextCharFormat objectsFormat;
         objectsFormat.setForeground(mixColor(m_bgColor, 40, -60, 40));
+        objectsFormat.setToolTip("Object");
         highlight(text, m_reObjects, objectsFormat);
+
+        QTextCharFormat propertyFormat;
+        propertyFormat.setForeground(mixColor(m_bgColor, -60, 40, 40));
+        highlight(text, m_reProperties, propertyFormat);
 
         QTextCharFormat functionFormat;
         functionFormat.setForeground(mixColor(m_bgColor, -40, -40, 40));
@@ -314,6 +249,7 @@ private:
 
     QWidget *m_editor;
     QRegExp m_reObjects;
+    QRegExp m_reProperties;
     QRegExp m_reFunctions;
     QRegExp m_reKeywords;
     QRegExp m_reLabels;
@@ -322,6 +258,94 @@ private:
 };
 
 } // namespace
+
+QStringList scriptableKeywords()
+{
+    return QStringList()
+            << "arguments"
+            << "break"
+            << "do"
+            << "instanceof"
+            << "typeof"
+            << "case"
+            << "else"
+            << "new"
+            << "var"
+            << "catch"
+            << "finally"
+            << "return"
+            << "void"
+            << "continue"
+            << "for"
+            << "switch"
+            << "while"
+            << "debugger"
+            << "function"
+            << "this"
+            << "with"
+            << "default"
+            << "if"
+            << "throw"
+            << "delete"
+            << "in"
+            << "try"
+               ;
+}
+
+QStringList scriptableProperties()
+{
+    QStringList result;
+
+    QMetaObject scriptableMetaObject = Scriptable::staticMetaObject;
+    for (int i = 0; i < scriptableMetaObject.propertyCount(); ++i) {
+        QMetaProperty property = scriptableMetaObject.property(i);
+        result.append(property.name());
+    }
+
+    result.removeOne("objectName");
+
+    return result;
+}
+
+QStringList scriptableFunctions()
+{
+    QStringList result;
+
+    QMetaObject scriptableMetaObject = Scriptable::staticMetaObject;
+    for (int i = 0; i < scriptableMetaObject.methodCount(); ++i) {
+        QMetaMethod method = scriptableMetaObject.method(i);
+
+        if (method.methodType() == QMetaMethod::Slot && method.access() == QMetaMethod::Public) {
+            const QString name = methodName(method);
+            result.append(name);
+        }
+    }
+
+    result.removeOne("deleteLater");
+
+    return result;
+}
+
+QStringList scriptableObjects()
+{
+    QStringList result;
+    result.append("ByteArray");
+    result.append("Dir");
+    result.append("File");
+    result.append("TemporaryFile");
+
+    QScriptEngine engine;
+
+    QScriptValue globalObject = engine.globalObject();
+    QScriptValueIterator it(globalObject);
+
+    while (it.hasNext()) {
+        it.next();
+        result.append(it.name());
+    }
+
+    return result;
+}
 
 void installCommandSyntaxHighlighter(QTextEdit *editor)
 {

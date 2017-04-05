@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -41,6 +41,8 @@ QIcon getIcon(const QVariant &iconOrIconId);
 QIcon getIconFromResources(const QString &iconName);
 
 QIcon iconFromFile(const QString &fileName);
+
+unsigned short toIconId(const QString &fileNameOrId);
 
 QPixmap createPixmap(unsigned short id, const QColor &color, int size);
 

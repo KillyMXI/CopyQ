@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright 2016 Lukáš Holeček <hluk@email.cz> -->
+<!-- Copyright 2017 Lukáš Holeček <hluk@email.cz> -->
 <component type="desktop">
     <id>copyq.desktop</id>
     <metadata_license>CC0-1.0</metadata_license>
@@ -23,6 +23,7 @@
     <url type="help">https://github.com/hluk/CopyQ/wiki</url>
     <url type="faq">https://github.com/hluk/CopyQ/wiki/FAQ</url>
     <url type="donation">https://www.bountysource.com/teams/copyq</url>
+    <url type="translate">https://hosted.weblate.org/engage/copyq/</url>
 
     <screenshots>
         <screenshot type="default">
@@ -39,5 +40,14 @@
         <kudo>ModernToolkit</kudo>
     </kudos>
 
-    <updatecontact>hluk_at_email.cz</updatecontact>
+    <keywords>
+      <keyword>clipboard</keyword>
+      <keyword>clipboard-manager</keyword>
+      <keyword>clipboard-history</keyword>
+      <keyword>notes</keyword>
+      <keyword>copy-and-paste</keyword>
+    </keywords>
+
+    <update_contact>hluk_at_email.cz</update_contact>
+    <developer_name>Lukas Holecek</developer_name>
 </component>

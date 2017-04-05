@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -39,15 +39,17 @@ class QListWidgetItem;
 class QSpinBox;
 
 /**
- * Configuration management.
- * Singleton.
+ * Configuration dialog.
  */
 class ConfigurationManager : public QDialog
 {
     Q_OBJECT
 
 public:
-    explicit ConfigurationManager(ItemFactory *itemFactory = NULL, QWidget *parent = NULL);
+    explicit ConfigurationManager(ItemFactory *itemFactory, QWidget *parent = nullptr);
+
+    /// Simple version of dialog for accessing and settings options from API.
+    ConfigurationManager();
 
     ~ConfigurationManager();
 
@@ -63,10 +65,13 @@ public:
     /** Return tooltip text for option with given @a name. */
     QString optionToolTip(const QString &name) const;
 
-    void setVisible(bool visible);
+    void setVisible(bool visible) override;
+
+    /** Load settings from default file. */
+    void loadSettings();
 
 public slots:
-    void done(int result);
+    void done(int result) override;
 
 signals:
     /** Emitted if configuration changes (after saveSettings() call). */
@@ -84,9 +89,6 @@ private slots:
     void on_spinBoxTrayItems_valueChanged(int value);
 
 private:
-    /** Load settings from default file. */
-    void loadSettings();
-
     void updateCommandItem(QListWidgetItem *item);
     void shortcutButtonClicked(QObject *button);
 

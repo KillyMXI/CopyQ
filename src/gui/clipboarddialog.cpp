@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,16 +23,25 @@
 #include "common/common.h"
 #include "common/contenttype.h"
 #include "common/mimetypes.h"
+#include "common/shortcuts.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
 #include "gui/windowgeometryguard.h"
 
+#include <QBuffer>
 #include <QListWidgetItem>
+#include <QMovie>
+#include <QScrollBar>
 #include <QUrl>
+
+// Limit number of characters to load at once - performance reasons.
+static const int batchLoadCharacters = 4096;
 
 ClipboardDialog::ClipboardDialog(QWidget *parent)
     : QDialog(parent)
-    , ui(NULL)
+    , ui(nullptr)
+    , m_animationBuffer(nullptr)
+    , m_animation(nullptr)
 {
     init();
 
@@ -44,9 +53,11 @@ ClipboardDialog::ClipboardDialog(QWidget *parent)
 ClipboardDialog::ClipboardDialog(
         const QPersistentModelIndex &index, QAbstractItemModel *model, QWidget *parent)
     : QDialog(parent)
-    , ui(NULL)
+    , ui(nullptr)
     , m_model(model)
     , m_index(index)
+    , m_animationBuffer(nullptr)
+    , m_animation(nullptr)
 {
     init();
 
@@ -64,19 +75,51 @@ ClipboardDialog::~ClipboardDialog()
 void ClipboardDialog::on_listWidgetFormats_currentItemChanged(
         QListWidgetItem *current, QListWidgetItem *)
 {
-    ui->actionRemove_Format->setEnabled(current != NULL);
+    ui->actionRemove_Format->setEnabled(current != nullptr);
 
-    QTextEdit *edit = ui->textEditContent;
-    QString mime = current ? current->text() : QString();
+    const QString mime = current ? current->text() : QString();
+    const bool hasImage = mime.startsWith(QString("image")) ;
+    const QByteArray animationFormat =
+            QString(mime).remove(QRegExp("^image/")).toUtf8();
+    const bool hasAnimation = QMovie::supportedFormats().contains(animationFormat);
 
-    edit->clear();
+    ui->textEdit->clear();
+    ui->textEdit->setVisible(!hasImage);
+    ui->scrollAreaImage->setVisible(hasImage);
+
+    if (hasImage)
+        ui->labelContent->setBuddy(ui->scrollAreaImage);
+    else
+        ui->labelContent->setBuddy(ui->textEdit);
+
     const QByteArray bytes = m_data.value(mime).toByteArray();
-    if ( mime.startsWith(QString("image")) ) {
-        edit->document()->addResource( QTextDocument::ImageResource,
-                                       QUrl("data://1"), bytes );
-        edit->setHtml( QString("<img src=\"data://1\" />") );
+
+    m_timerTextLoad.stop();
+
+    if (hasAnimation) {
+        if (m_animation)
+            m_animation->deleteLater();
+
+        if (m_animationBuffer)
+            m_animationBuffer->deleteLater();
+
+        m_animationBuffer = new QBuffer(this);
+        m_animationBuffer->open(QIODevice::ReadWrite);
+        m_animationBuffer->write(bytes);
+        m_animationBuffer->seek(0);
+
+        m_animation = new QMovie(this);
+        m_animation->setDevice(m_animationBuffer);
+        m_animation->setFormat(animationFormat);
+        ui->labelImage->setMovie(m_animation);
+        m_animation->start();
+    } else if (hasImage) {
+        QPixmap pix;
+        pix.loadFromData( bytes, mime.toLatin1() );
+        ui->labelImage->setPixmap(pix);
     } else {
-        edit->setPlainText( dataToText(bytes, mime) );
+        m_textToShow = dataToText(bytes, mime);
+        addText();
     }
 
     ui->labelProperties->setText(
@@ -108,6 +151,19 @@ void ClipboardDialog::onDataChanged(const QModelIndex &topLeft, const QModelInde
     }
 }
 
+void ClipboardDialog::addText()
+{
+    const int scrollValue = ui->textEdit->verticalScrollBar()->value();
+
+    ui->textEdit->appendPlainText( m_textToShow.left(batchLoadCharacters) );
+    m_textToShow.remove(0, batchLoadCharacters);
+
+    if ( !m_textToShow.isEmpty() )
+        m_timerTextLoad.start();
+
+    ui->textEdit->verticalScrollBar()->setValue(scrollValue);
+}
+
 void ClipboardDialog::init()
 {
     Q_ASSERT(!ui);
@@ -125,6 +181,8 @@ void ClipboardDialog::init()
     ui->actionRemove_Format->setIcon( getIcon("list-remove", IconRemove) );
     ui->actionRemove_Format->setShortcut(shortcutToRemove());
     ui->listWidgetFormats->addAction(ui->actionRemove_Format);
+
+    on_listWidgetFormats_currentItemChanged(nullptr, nullptr);
 }
 
 void ClipboardDialog::setData(const QVariantMap &data)
@@ -134,7 +192,7 @@ void ClipboardDialog::setData(const QVariantMap &data)
     m_data.clear();
 
     // Show only data that can be displayed.
-    foreach ( const QString &mime, data.keys() ) {
+    for ( const auto &mime : data.keys() ) {
         if ( data[mime].canConvert<QByteArray>() ) {
             m_data.insert(mime, data[mime]);
             ui->listWidgetFormats->addItem(mime);
@@ -144,4 +202,6 @@ void ClipboardDialog::setData(const QVariantMap &data)
             }
         }
     }
+
+    initSingleShotTimer(&m_timerTextLoad, 10, this, SLOT(addText()));
 }

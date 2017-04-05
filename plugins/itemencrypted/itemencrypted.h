@@ -24,26 +24,68 @@
 #include "gui/icons.h"
 
 #include <QProcess>
-#include <QScopedPointer>
 #include <QWidget>
+
+#include <memory>
 
 namespace Ui {
 class ItemEncryptedSettings;
 }
 
-class QFile;
+class QIODevice;
 
 class ItemEncrypted : public QWidget, public ItemWidget
 {
     Q_OBJECT
 
 public:
-    ItemEncrypted(QWidget *parent);
+    explicit ItemEncrypted(QWidget *parent);
 
-    virtual void setEditorData(QWidget *editor, const QModelIndex &index) const;
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override;
 
-    virtual void setModelData(QWidget *editor, QAbstractItemModel *model,
-                              const QModelIndex &index) const;
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                              const QModelIndex &index) const override;
+};
+
+class ItemEncryptedSaver : public QObject, public ItemSaverInterface
+{
+    Q_OBJECT
+
+public:
+    bool saveItems(const QString &tabName, const QAbstractItemModel &model, QIODevice *file) override;
+
+signals:
+    void error(const QString &);
+
+private:
+    void emitEncryptFailed();
+};
+
+class ItemEncryptedScriptable : public ItemScriptable
+{
+    Q_OBJECT
+public:
+    explicit ItemEncryptedScriptable(QObject *parent) : ItemScriptable(parent) {}
+
+public slots:
+    bool isEncrypted();
+    QByteArray encrypt();
+    QByteArray decrypt();
+
+    void encryptItem();
+    void decryptItem();
+
+    void encryptItems();
+    void decryptItems();
+
+    void copyEncryptedItems();
+
+    QString generateTestKeys();
+    bool isGpgInstalled();
+
+private:
+    QByteArray encrypt(const QByteArray &bytes);
+    QByteArray decrypt(const QByteArray &bytes);
 };
 
 class ItemEncryptedLoader : public QObject, public ItemLoaderInterface
@@ -57,45 +99,47 @@ public:
 
     ~ItemEncryptedLoader();
 
-    virtual ItemWidget *create(const QModelIndex &index, QWidget *parent) const;
+    ItemWidget *create(const QModelIndex &index, QWidget *parent, bool) const override;
 
-    virtual QString id() const { return "itemencrypted"; }
-    virtual QString name() const { return tr("Encryption"); }
-    virtual QString author() const { return QString(); }
-    virtual QString description() const { return tr("Encrypt items and tabs."); }
-    virtual QVariant icon() const { return QVariant(IconLock); }
+    QString id() const override { return "itemencrypted"; }
+    QString name() const override { return tr("Encryption"); }
+    QString author() const override { return QString(); }
+    QString description() const override { return tr("Encrypt items and tabs."); }
+    QVariant icon() const override { return QVariant(IconLock); }
 
-    virtual QStringList formatsToSave() const;
+    QStringList formatsToSave() const override;
 
-    virtual QVariantMap applySettings();
+    QVariantMap applySettings() override;
 
-    virtual void loadSettings(const QVariantMap &settings) { m_settings = settings; }
+    void loadSettings(const QVariantMap &settings) override { m_settings = settings; }
 
-    virtual QWidget *createSettingsWidget(QWidget *parent);
+    QWidget *createSettingsWidget(QWidget *parent) override;
 
-    virtual bool canLoadItems(QFile *file) const;
+    bool canLoadItems(QIODevice *file) const override;
 
-    virtual bool canSaveItems(const QAbstractItemModel &model) const;
+    bool canSaveItems(const QString &tabName) const override;
 
-    virtual bool loadItems(QAbstractItemModel *model, QFile *file);
+    ItemSaverPtr loadItems(const QString &tabName, QAbstractItemModel *model, QIODevice *file, int maxItems) override;
 
-    virtual bool saveItems(const QAbstractItemModel &model, QFile *file);
+    ItemSaverPtr initializeTab(const QString &, QAbstractItemModel *model, int maxItems) override;
 
-    virtual bool initializeTab(QAbstractItemModel *model);
+    QObject *tests(const TestInterfacePtr &test) const override;
 
-    virtual const QObject *signaler() const { return this; }
+    const QObject *signaler() const override { return this; }
 
-    virtual QString script() const;
+    ItemScriptable *scriptableObject(QObject *parent) override;
 
-    virtual QList<Command> commands() const;
+    QList<Command> commands() const override;
 
 signals:
     void error(const QString &);
+    void addCommands(const QList<Command> &commands);
 
 private slots:
     void setPassword();
     void terminateGpgProcess();
     void onGpgProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void addCommands();
 
 private:
     enum GpgProcessStatus {
@@ -107,10 +151,11 @@ private:
 
     void updateUi();
 
-    void emitEncryptFailed();
     void emitDecryptFailed();
 
-    QScopedPointer<Ui::ItemEncryptedSettings> ui;
+    ItemSaverPtr createSaver();
+
+    std::unique_ptr<Ui::ItemEncryptedSettings> ui;
     QVariantMap m_settings;
 
     GpgProcessStatus m_gpgProcessStatus;

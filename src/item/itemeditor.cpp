@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -28,7 +28,8 @@
 #include <QProcess>
 #include <QTemporaryFile>
 #include <QTimer>
-#include <stdio.h>
+
+#include <cstdio>
 
 namespace {
 
@@ -64,7 +65,7 @@ ItemEditor::ItemEditor(const QByteArray &data, const QString &mime, const QStrin
     , m_mime(mime)
     , m_hash( qHash(m_data) )
     , m_editorcmd(editor)
-    , m_editor(NULL)
+    , m_editor(nullptr)
     , m_timer( new QTimer(this) )
     , m_info()
     , m_lastmodified()
@@ -87,6 +88,11 @@ ItemEditor::~ItemEditor()
     }
 }
 
+void ItemEditor::setIndex(const QModelIndex &index)
+{
+    m_index = index;
+}
+
 bool ItemEditor::start()
 {
     // create temp file
@@ -103,12 +109,17 @@ bool ItemEditor::start()
         return false;
     }
 
+    const auto fileName = tmpfile.fileName();
+
     // write text to temp file
     tmpfile.write(m_data);
-    tmpfile.flush();
+
+    // Close file before launching editor (this is required on Windows).
+    tmpfile.setAutoRemove(false);
+    tmpfile.close();
 
     // monitor file
-    m_info.setFile( tmpfile.fileName() );
+    m_info.setFile(fileName);
     m_lastmodified = m_info.lastModified();
     m_lastSize = m_info.size();
     m_timer->start(500);
@@ -123,14 +134,13 @@ bool ItemEditor::start()
             this, SLOT(onError()) );
 
     // use native path for filename to edit
-    const QString nativeFilePath = QDir::toNativeSeparators(m_info.filePath());
-    QString cmd = m_editorcmd.arg('"' + nativeFilePath + '"');
+    const auto nativeFilePath = QDir::toNativeSeparators( m_info.absoluteFilePath() );
+    const auto cmd = m_editorcmd.arg('"' + nativeFilePath + '"');
 
     // execute editor
-    m_editor->start(cmd);
-
-    tmpfile.setAutoRemove(false);
-    tmpfile.close();
+    m_editor->start(cmd, QIODevice::ReadOnly);
+    m_editor->closeWriteChannel();
+    m_editor->closeReadChannel(QProcess::StandardOutput);
 
     return true;
 }
@@ -139,7 +149,7 @@ void ItemEditor::close()
 {
     // check if file was modified before closing
     if ( m_modified || fileModified() )
-        emit fileModified(m_data, m_mime);
+        emit fileModified(m_data, m_mime, m_index);
 
     if (m_editor && m_editor->exitCode() != 0 ) {
         emitError( tr("editor exit code is %1").arg(m_editor->exitCode()) );
@@ -194,7 +204,7 @@ void ItemEditor::onTimer()
         // Wait until file is fully overwritten.
         if ( !fileModified() ) {
             m_modified = false;
-            emit fileModified(m_data, m_mime);
+            emit fileModified(m_data, m_mime, m_index);
             m_hash = qHash(m_data);
         }
     } else {

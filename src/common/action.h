@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,7 +21,6 @@
 #define ACTION_H
 
 #include <QModelIndex>
-#include <QMutex>
 #include <QProcess>
 #include <QStringList>
 #include <QVariantMap>
@@ -30,14 +29,15 @@
 class QAction;
 
 /**
- * Execute external program.
+ * Execute external program and emits signals
+ * to create or change items from the program's stdout.
  */
 class Action : public QObject
 {
     Q_OBJECT
 public:
     /** Create action with command line parameters. */
-    explicit Action(QObject *parent = NULL);
+    explicit Action(QObject *parent = nullptr);
 
     ~Action();
 
@@ -45,7 +45,7 @@ public:
     bool actionFailed() const { return m_failed; }
 
     /** Return standard error output string. */
-    const QString &errorOutput() const { return m_errstr; }
+    const QString &errorOutput() const { return m_errorOutput; }
 
     /** Return command line. */
     QString command() const;
@@ -81,6 +81,9 @@ public:
     QModelIndex index() const { return m_index; }
     void setIndex(const QModelIndex &index) { m_index = index; }
 
+    /** Set working directory path (default is empty so it doesn't change working directory). */
+    void setWorkingDirectory(const QString &path) { m_workingDirectoryPath = path; }
+
     /** Execute command. */
     void start();
 
@@ -104,8 +107,11 @@ public:
     void setData(const QVariantMap &data);
     const QVariantMap &data() const;
 
-    static QVariantMap data(quintptr id);
-    static void setData(quintptr id, const QVariantMap &data);
+    void setId(int actionId) { m_id = actionId; }
+    int id() const { return m_id; }
+
+    void setIgnoreExitCode(bool ignore) { m_ignoreExitCode = ignore; }
+    bool ignoreExitCode() const { return m_ignoreExitCode; }
 
 public slots:
     /** Terminate (kill) process. */
@@ -118,32 +124,43 @@ signals:
     void actionFinished(Action *act);
     /** Emitter when started. */
     void actionStarted(Action *act);
-    /** Emitted if standard output has some items available. */
-    void newItems(const QStringList, const QString &outputTabName);
-    void newItems(const QStringList, const QModelIndex &index);
-    /** Emitted after all standard output is read. */
-    void newItem(const QByteArray &data, const QString &format,
-                 const QString &outputTabName);
-    void newItem(const QByteArray &data, const QString &format,
-                 const QModelIndex &index);
+
+    /**
+     * Emitted if standard output can be split into items.
+     *
+     * Output format and separator's must be set to valid values.
+     */
+    void newItems(const QStringList &, const QString &format, const QString &outputTabName);
+
+    /**
+     * Emitted after all standard output is read.
+     *
+     * Output format must be set to a valid value and both separator and index invalid.
+     */
+    void newItem(const QByteArray &data, const QString &format, const QString &outputTabName);
+
+    /**
+     * Emitted if standard output has some items available.
+     *
+     * Output format and index must be set to a valid value and separator empty.
+     */
+    void changeItem(
+            const QByteArray &data, const QString &format, const QModelIndex &index);
+
     void dataChanged(const QVariantMap &data);
 
 private slots:
-    void actionError(QProcess::ProcessError error);
-    void actionStarted();
-    void actionFinished();
-    void actionOutput();
-    void actionErrorOutput();
+    void onSubProcessError(QProcess::ProcessError error);
+    void onSubProcessStarted();
+    void onSubProcessFinished();
+    void onSubProcessOutput();
+    void onSubProcessErrorOutput();
     void writeInput();
+    void onBytesWritten();
 
 private:
-    static QMutex actionsLock;
-    static QVector<Action*> actions;
-
-    bool hasTextOutput() const;
-    bool canEmitNewItems() const;
-
     void closeSubCommands();
+    void actionFinished();
 
     QByteArray m_input;
     QRegExp m_sep;
@@ -152,18 +169,21 @@ private:
     QStringList m_inputFormats;
     QString m_outputFormat;
     QPersistentModelIndex m_index;
-    QString m_errstr;
+    QString m_workingDirectoryPath;
+    QString m_errorOutput;
     QString m_lastOutput;
     QByteArray m_outputData;
     bool m_failed;
     int m_currentLine;
     QString m_name;
-    QStringList m_items;
     QVariantMap m_data;
     QVector<QProcess*> m_processes;
 
     int m_exitCode;
     QString m_errorString;
+    bool m_ignoreExitCode = false;
+
+    int m_id = -1;
 };
 
 #endif // ACTION_H

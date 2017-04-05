@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -49,7 +49,7 @@ void copySettings(const QSettings &from, QSettings *to)
 
     to->clear();
 
-    foreach ( const QString &key, from.allKeys() )
+    for ( const auto &key : from.allKeys() )
         to->setValue(key, from.value(key));
 
     to->sync();

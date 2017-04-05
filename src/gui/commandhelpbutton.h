@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -29,7 +29,7 @@ class CommandHelpButton : public QWidget
 {
     Q_OBJECT
 public:
-    explicit CommandHelpButton(QWidget *parent = NULL);
+    explicit CommandHelpButton(QWidget *parent = nullptr);
 
 public slots:
     void showHelp();

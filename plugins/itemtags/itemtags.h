@@ -23,10 +23,11 @@
 #include "gui/icons.h"
 #include "item/itemwidget.h"
 
-#include <QScopedPointer>
 #include <QVariant>
 #include <QVector>
 #include <QWidget>
+
+#include <memory>
 
 namespace Ui {
 class ItemTagsSettings;
@@ -47,7 +48,7 @@ public:
         QString match;
     };
 
-    typedef QVector<Tag> Tags;
+    using Tags = QVector<ItemTags::Tag>;
 
     ItemTags(ItemWidget *childItem, const Tags &tags);
 
@@ -55,25 +56,58 @@ signals:
     void runCommand(const Command &command);
 
 protected:
-    virtual void highlight(const QRegExp &re, const QFont &highlightFont,
-                           const QPalette &highlightPalette);
+    void highlight(const QRegExp &re, const QFont &highlightFont,
+                           const QPalette &highlightPalette) override;
 
-    virtual QWidget *createEditor(QWidget *parent) const;
+    QWidget *createEditor(QWidget *parent) const override;
 
-    virtual void setEditorData(QWidget *editor, const QModelIndex &index) const;
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override;
 
-    virtual void setModelData(QWidget *editor, QAbstractItemModel *model,
-                              const QModelIndex &index) const;
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                              const QModelIndex &index) const override;
 
-    virtual bool hasChanges(QWidget *editor) const;
+    bool hasChanges(QWidget *editor) const override;
 
-    virtual QObject *createExternalEditor(const QModelIndex &index, QWidget *parent) const;
+    QObject *createExternalEditor(const QModelIndex &index, QWidget *parent) const override;
 
-    virtual void updateSize(const QSize &maximumSize, int idealWidth);
+    void updateSize(const QSize &maximumSize, int idealWidth) override;
 
 private:
     QWidget *m_tagWidget;
-    QScopedPointer<ItemWidget> m_childItem;
+    std::unique_ptr<ItemWidget> m_childItem;
+};
+
+class ItemTagsLoader;
+
+class ItemTagsScriptable : public ItemScriptable
+{
+    Q_OBJECT
+    Q_PROPERTY(QStringList userTags READ getUserTags)
+
+public:
+    explicit ItemTagsScriptable(ItemTagsLoader *loader, QObject *parent);
+
+    QStringList getUserTags() const;
+
+public slots:
+    QStringList tags();
+    void tag();
+    void untag();
+    void clearTags();
+    bool hasTag();
+
+private:
+    QString askTagName(const QString &dialogTitle, const QStringList &tags);
+    QString askRemoveTagName(const QStringList &tags);
+    QList<int> rows(const QVariantList &arguments, int skip);
+    QStringList tags(int row);
+    QStringList tags(const QVariant &tags);
+    QStringList tags(const QVariantMap &itemData);
+    void setTags(int row, const QStringList &tags);
+    bool addTag(const QString &tagName, QStringList *tags);
+    bool removeTag(const QString &tagName, QStringList *tags);
+
+    ItemTagsLoader *m_loader;
 };
 
 class ItemTagsLoader : public QObject, public ItemLoaderInterface
@@ -86,29 +120,39 @@ public:
     ItemTagsLoader();
     ~ItemTagsLoader();
 
-    virtual QString id() const { return "itemtags"; }
-    virtual QString name() const { return tr("Tags"); }
-    virtual QString author() const { return QString(); }
-    virtual QString description() const { return tr("Display tags for items."); }
-    virtual QVariant icon() const { return QVariant(IconTag); }
+    QString id() const override { return "itemtags"; }
+    QString name() const override { return tr("Tags"); }
+    QString author() const override { return QString(); }
+    QString description() const override { return tr("Display tags for items."); }
+    QVariant icon() const override { return QVariant(IconTag); }
 
-    virtual QStringList formatsToSave() const;
+    QStringList formatsToSave() const override;
 
-    virtual QVariantMap applySettings();
+    QVariantMap applySettings() override;
 
-    virtual void loadSettings(const QVariantMap &settings);
+    void loadSettings(const QVariantMap &settings) override;
 
-    virtual QWidget *createSettingsWidget(QWidget *parent);
+    QWidget *createSettingsWidget(QWidget *parent) override;
 
-    virtual ItemWidget *transform(ItemWidget *itemWidget, const QModelIndex &index);
+    ItemWidget *transform(ItemWidget *itemWidget, const QModelIndex &index) override;
 
-    virtual bool matches(const QModelIndex &index, const QRegExp &re) const;
+    bool matches(const QModelIndex &index, const QRegExp &re) const override;
 
-    virtual QObject *tests(const TestInterfacePtr &test) const;
+    QObject *tests(const TestInterfacePtr &test) const override;
 
-    virtual QString script() const;
+    const QObject *signaler() const override { return this; }
 
-    virtual QList<Command> commands() const;
+    ItemScriptable *scriptableObject(QObject *parent) override;
+
+    QList<Command> commands() const override;
+
+    QStringList userTags() const;
+
+signals:
+    void addCommands(const QList<Command> &commands);
+
+private slots:
+    void addCommands();
 
 private slots:
     void onColorButtonClicked();
@@ -116,8 +160,8 @@ private slots:
     void onTableWidgetItemChanged();
 
 private:
-    typedef ItemTags::Tag Tag;
-    typedef ItemTags::Tags Tags;
+    using Tag = ItemTags::Tag;
+    using Tags = ItemTags::Tags;
 
     static QString serializeTag(const Tag &tag);
     static Tag deserializeTag(const QString &tagText);
@@ -130,7 +174,7 @@ private:
 
     QVariantMap m_settings;
     Tags m_tags;
-    QScopedPointer<Ui::ItemTagsSettings> ui;
+    std::unique_ptr<Ui::ItemTagsSettings> ui;
 
     bool m_blockDataChange;
 };

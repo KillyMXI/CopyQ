@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,8 +20,15 @@
 #ifndef COMMANDSYNTAXHIGHLIGHTER_H
 #define COMMANDSYNTAXHIGHLIGHTER_H
 
-class QTextEdit;
 class QPlainTextEdit;
+class QStringList;
+class QTextEdit;
+
+QStringList scriptableKeywords();
+QStringList scriptableProperties();
+QStringList scriptableFunctions();
+/// Constructors and functions from ECMA specification supported by Qt plus ByteArray.
+QStringList scriptableObjects();
 
 void installCommandSyntaxHighlighter(QTextEdit *editor);
 void installCommandSyntaxHighlighter(QPlainTextEdit *editor);

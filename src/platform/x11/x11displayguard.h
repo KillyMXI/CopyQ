@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,8 +20,6 @@
 #ifndef X11DISPLAYGUARD_H
 #define X11DISPLAYGUARD_H
 
-#include <QSharedPointer>
-
 #include <X11/Xlib.h>
 
 class X11DisplayGuard
@@ -32,16 +30,32 @@ public:
      * The create Display is automatically closed with XCloseDisplay() when object is destroyed.
      */
     X11DisplayGuard()
-        : m_display(XOpenDisplay(NULL), XCloseDisplay)
+        : m_display(XOpenDisplay(nullptr))
     {}
 
     /**
-     * Get the opened Display (can be NULL if opening failed).
+     * Closes Display with XCloseDisplay() (if Display is valid).
      */
-    Display *display() { return m_display.data(); }
+    ~X11DisplayGuard()
+    {
+        if (m_display != nullptr)
+            XCloseDisplay(m_display);
+    }
+
+    /**
+     * Get the opened Display (can be nullptr if opening failed).
+     */
+    Display *display()
+    {
+        return m_display;
+    }
 
 private:
-    QSharedPointer<Display> m_display;
+    // Disable copying
+    X11DisplayGuard(X11DisplayGuard &other) = delete;
+    X11DisplayGuard &operator=(X11DisplayGuard &other) = delete;
+
+    Display *m_display;
 };
 
 #endif // X11DISPLAYGUARD_H

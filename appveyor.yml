@@ -1,23 +1,46 @@
 # Configuration file for AppVeyor CI
-os: Default Azure
-
 configuration: Release
 
+cache:
+  - build
+
 environment:
-  CMAKE_PREFIX_PATH: C:\Qt\5.4\msvc2013_opengl
-  CMAKE_GENERATOR: Visual Studio 12
+  VCINSTALLDIR: C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\
+
+  matrix:
+    - QTDIR: C:\Qt\5.7\mingw53_32
+      CMAKE_GENERATOR: MinGW Makefiles
+      MINGW_PATH: C:\Qt\Tools\mingw530_32
+
+    - QTDIR: C:\Qt\5.7\msvc2015
+      CMAKE_GENERATOR: Visual Studio 14 2015
+      VC_VARS_ARCH: x86
+
+    - QTDIR: C:\Qt\5.7\msvc2015_64
+      CMAKE_GENERATOR: Visual Studio 14 2015 Win64
+      VC_VARS_ARCH: amd64
+
+# Parameters for default build commands (build_script is used instead).
+build:
+
+install:
+- utils\appveyor\install.bat
 
 before_build:
-- utils\appveyor-before-build.bat
+- utils\appveyor\before_build.bat
 
-build:
-  project: build\copyq.sln
-  parallel: true
+build_script:
+- utils\appveyor\build_script.bat
 
 after_build:
-- utils\appveyor-after-build.bat
+- utils\appveyor\after_build.bat
 
 artifacts:
-- path: Bundle
-  name: copyq
-  type: WebDeployPackage
+- path: 'copyq*.zip'
+  name: CopyQ Portable
+
+- path: 'copyq-*-setup.exe'
+  name: CopyQ Setup
+
+matrix:
+  fast_finish: true     # set this flag to immediately finish build once one of the jobs fails.

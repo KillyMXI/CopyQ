@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,11 +24,15 @@
 #include "common/contenttype.h"
 #include "common/mimetypes.h"
 #include "common/option.h"
+#include "common/temporarysettings.h"
+#include "common/textdata.h"
 #include "gui/clipboardbrowser.h"
+#include "gui/clipboardbrowsershared.h"
 #include "gui/iconfont.h"
 #include "gui/theme.h"
 #include "item/itemeditor.h"
 #include "item/itemdelegate.h"
+#include "platform/platformnativeinterface.h"
 
 #include <QAbstractScrollArea>
 #include <QColorDialog>
@@ -40,25 +44,29 @@
 #include <QSettings>
 #include <QTemporaryFile>
 
-#ifndef COPYQ_THEME_PREFIX
-#   ifdef Q_OS_WIN
-#       define COPYQ_THEME_PREFIX QApplication::applicationDirPath() + "/themes"
-#   else
-#       define COPYQ_THEME_PREFIX ""
-#   endif
+namespace {
+
+QString themePrefix()
+{
+#ifdef COPYQ_THEME_PREFIX
+    return COPYQ_THEME_PREFIX;
+#else
+    return createPlatformNativeInterface()->themePrefix();
 #endif
+}
+
+} // namespace
 
 ConfigTabAppearance::ConfigTabAppearance(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::ConfigTabAppearance)
     , m_theme(ui)
     , m_editor()
-    , m_preview(NULL)
 {
     ui->setupUi(this);
 
     // Connect signals from theme buttons.
-    foreach (QPushButton *button, ui->scrollAreaTheme->findChildren<QPushButton *>()) {
+    for (auto button : ui->scrollAreaTheme->findChildren<QPushButton *>()) {
         if (button->objectName().endsWith("Font"))
             connect(button, SIGNAL(clicked()), SLOT(onFontButtonClicked()));
         else if (button->objectName().startsWith("pushButtonColor"))
@@ -82,72 +90,34 @@ ConfigTabAppearance::~ConfigTabAppearance()
     delete ui;
 }
 
-void ConfigTabAppearance::loadTheme(QSettings &settings)
+void ConfigTabAppearance::loadTheme(const QSettings &settings)
 {
     m_theme.loadTheme(settings);
     updateStyle();
 }
 
-void ConfigTabAppearance::saveTheme(QSettings &settings)
+void ConfigTabAppearance::saveTheme(QSettings *settings)
 {
     m_theme.saveTheme(settings);
-    settings.sync();
+    settings->sync();
     updateThemes();
 }
 
 void ConfigTabAppearance::createPreview(ItemFactory *itemFactory)
 {
-    if (m_preview)
-        return;
-
-    ClipboardBrowserSharedPtr sharedData(new ClipboardBrowserShared(itemFactory));
-    ClipboardBrowser *c = new ClipboardBrowser(sharedData, this);
-    ui->browserParentLayout->addWidget(c);
-    m_preview = c;
-
-    const QString searchFor = tr("item", "Search expression in preview in Appearance tab.");
-
-    c->addItems( QStringList()
-                 << tr("Search string is %1.").arg( quoteString(searchFor) )
-                 << tr("Select an item and\n"
-                       "press F2 to edit.")
-                 << tr("Select items and move them with\n"
-                       "CTRL and up or down key.")
-                 << tr("Remove item with Delete key.") );
-    for (int i = 1; i <= 20; ++i)
-        c->add( tr("Example item %1").arg(i), -1 );
-
-    QAbstractItemModel *model = c->model();
-    QModelIndex index = model->index(0, 0);
-    QVariantMap dataMap;
-    dataMap.insert( mimeItemNotes, tr("Some random notes (Shift+F2 to edit)").toUtf8() );
-    model->setData(index, dataMap, contentType::updateData);
-
-    // Highlight found text but don't filter out any items.
-    c->filterItems( QRegExp(QString("|") + searchFor, Qt::CaseInsensitive) );
-
-    QAction *act;
-
-    act = new QAction(c);
-    act->setShortcut( QString("Shift+F2") );
-    connect(act, SIGNAL(triggered()), c, SLOT(editNotes()));
-    c->addAction(act);
-
-    act = new QAction(c);
-    act->setShortcut( QString("F2") );
-    connect(act, SIGNAL(triggered()), c, SLOT(editSelected()));
-    c->addAction(act);
+    m_itemFactory = itemFactory;
+    decoratePreview();
 }
 
 void ConfigTabAppearance::onFontButtonClicked()
 {
-    Q_ASSERT(sender() != NULL);
+    Q_ASSERT(sender() != nullptr);
     fontButtonClicked(sender());
 }
 
 void ConfigTabAppearance::onColorButtonClicked()
 {
-    Q_ASSERT(sender() != NULL);
+    Q_ASSERT(sender() != nullptr);
     colorButtonClicked(sender());
 }
 
@@ -169,7 +139,7 @@ void ConfigTabAppearance::on_pushButtonSaveTheme_clicked()
         if ( !filename.endsWith(".ini") )
             filename.append(".ini");
         QSettings settings(filename, QSettings::IniFormat);
-        saveTheme(settings);
+        saveTheme(&settings);
     }
 }
 
@@ -187,16 +157,10 @@ void ConfigTabAppearance::on_pushButtonEditTheme_clicked()
         return;
     }
 
-    QTemporaryFile tmpfile;
-    if ( !openTemporaryFile(&tmpfile) )
-        return;
+    TemporarySettings settings;
+    saveTheme(settings.settings());
 
-    {
-        QSettings settings(tmpfile.fileName(), QSettings::IniFormat);
-        saveTheme(settings);
-    }
-
-    QByteArray data = readTemporaryFileContent(tmpfile);
+    QByteArray data = settings.content();
     // keep ini file user friendly
     data.replace("\\n",
 #ifdef Q_OS_WIN
@@ -208,7 +172,7 @@ void ConfigTabAppearance::on_pushButtonEditTheme_clicked()
 
     ItemEditor *editor = new ItemEditor(data, COPYQ_MIME_PREFIX "theme", m_editor, this);
 
-    connect( editor, SIGNAL(fileModified(QByteArray,QString)),
+    connect( editor, SIGNAL(fileModified(QByteArray,QString,QModelIndex)),
              this, SLOT(onThemeModified(QByteArray)) );
 
     connect( editor, SIGNAL(closed(QObject *)),
@@ -241,7 +205,7 @@ void ConfigTabAppearance::on_comboBoxThemes_activated(const QString &text)
 
     QString fileName = defaultUserThemePath() + "/" + text + ".ini";
     if ( !QFile(fileName).exists() ) {
-        fileName = COPYQ_THEME_PREFIX;
+        fileName = themePrefix();
         if ( fileName.isEmpty() || !QFile(fileName).exists() )
             return;
         fileName.append("/" + text + ".ini");
@@ -257,9 +221,6 @@ void ConfigTabAppearance::onThemeModified(const QByteArray &bytes)
     if ( !openTemporaryFile(&tmpfile) )
         return;
 
-    if ( !tmpfile.open() )
-        return;
-
     tmpfile.write(bytes);
     tmpfile.flush();
 
@@ -273,30 +234,33 @@ void ConfigTabAppearance::updateThemes()
     ui->comboBoxThemes->clear();
     ui->comboBoxThemes->addItem(QString());
 
-    const QStringList nameFilters("*.ini");
+    const QString userThemesPath = defaultUserThemePath();
+    QDir themesDir(userThemesPath);
+    if ( themesDir.mkpath(".") )
+        addThemes(userThemesPath);
+
+    const QByteArray customThemsPath = qgetenv("COPYQ_THEME_PREFIX");
+    if ( !customThemsPath.isEmpty() )
+        addThemes(QString::fromLocal8Bit(customThemsPath));
+
+    const QString themesPath = themePrefix();
+    if ( !themesPath.isEmpty() )
+        addThemes(themesPath);
+}
+
+void ConfigTabAppearance::addThemes(const QString &path)
+{
     const QDir::Filters filters = QDir::Files | QDir::Readable;
+    const QStringList nameFilters("*.ini");
 
-    QDir themesDir( defaultUserThemePath() );
-    if ( themesDir.mkpath(".") ) {
-        foreach ( const QFileInfo &fileInfo,
-                  themesDir.entryInfoList(nameFilters, filters, QDir::Name) )
-        {
-            const QIcon icon = createThemeIcon( themesDir.absoluteFilePath(fileInfo.fileName()) );
-            ui->comboBoxThemes->addItem( icon, fileInfo.baseName() );
-        }
-    }
-
-    const QString themesPath(COPYQ_THEME_PREFIX);
-    if ( !themesPath.isEmpty() ) {
-        QDir dir(themesPath);
-        foreach ( const QFileInfo &fileInfo,
-                  dir.entryList(nameFilters, filters, QDir::Name) )
-        {
-            const QString name = fileInfo.baseName();
-            if ( ui->comboBoxThemes->findText(name) == -1 ) {
-                const QIcon icon = createThemeIcon( dir.absoluteFilePath(fileInfo.fileName()) );
-                ui->comboBoxThemes->addItem(icon, name);
-            }
+    QDir dir(path);
+    for ( const auto &fileInfo :
+              dir.entryInfoList(nameFilters, filters, QDir::Name) )
+    {
+        const QString name = fileInfo.baseName();
+        if ( ui->comboBoxThemes->findText(name) == -1 ) {
+            const QIcon icon = createThemeIcon( dir.absoluteFilePath(fileInfo.fileName()) );
+            ui->comboBoxThemes->addItem(icon, name);
         }
     }
 }
@@ -355,7 +319,7 @@ void ConfigTabAppearance::updateColorButtons()
     QList<QPushButton *> buttons =
             ui->scrollAreaTheme->findChildren<QPushButton *>(QRegExp("^pushButtonColor"));
 
-    foreach (QPushButton *button, buttons) {
+    for (auto button : buttons) {
         QColor color = evalColor( button->property("VALUE").toString(), m_theme );
         pix.fill(color);
         button->setIcon(pix);
@@ -374,18 +338,18 @@ void ConfigTabAppearance::updateFontButtons()
     QRegExp re("^pushButton(.*)Font$");
     QList<QPushButton *> buttons = ui->scrollAreaTheme->findChildren<QPushButton *>(re);
 
-    foreach (QPushButton *button, buttons) {
+    for (auto button : buttons) {
         if ( re.indexIn(button->objectName()) == -1 )
             Q_ASSERT(false);
 
         const QString colorButtonName = "pushButtonColor" + re.cap(1);
 
         QPushButton *buttonFg = ui->scrollAreaTheme->findChild<QPushButton *>(colorButtonName + "Fg");
-        QColor colorFg = (buttonFg == NULL) ? m_theme.color("fg")
+        QColor colorFg = (buttonFg == nullptr) ? m_theme.color("fg")
                                             : evalColor( buttonFg->property("VALUE").toString(), m_theme );
 
         QPushButton *buttonBg = ui->scrollAreaTheme->findChild<QPushButton *>(colorButtonName + "Bg");
-        QColor colorBg = (buttonBg == NULL) ? m_theme.color("bg")
+        QColor colorBg = (buttonBg == nullptr) ? m_theme.color("bg")
                                             : evalColor( buttonBg->property("VALUE").toString(), m_theme );
 
         pix.fill(colorBg);
@@ -461,6 +425,53 @@ QIcon ConfigTabAppearance::createThemeIcon(const QString &fileName)
 
 void ConfigTabAppearance::decoratePreview()
 {
-    if ( m_preview && isVisible() )
-        m_preview->decorate(m_theme);
+    if ( !m_itemFactory || !isVisible() )
+        return;
+
+    if (m_preview) {
+        delete m_preview;
+        m_preview = nullptr;
+    }
+
+    const auto sharedData = std::make_shared<ClipboardBrowserShared>(m_itemFactory);
+    sharedData->theme = m_theme;
+
+    auto c = new ClipboardBrowser(QString(), sharedData, this);
+    m_preview = c;
+    m_theme.decorateBrowser(c);
+
+    ui->browserParentLayout->addWidget(c);
+
+    const QString searchFor = tr("item", "Search expression in preview in Appearance tab.");
+
+    c->addItems( QStringList()
+                 << tr("Search string is %1.").arg( quoteString(searchFor) )
+                 << tr("Select an item and\n"
+                       "press F2 to edit.")
+                 << tr("Select items and move them with\n"
+                       "CTRL and up or down key.")
+                 << tr("Remove item with Delete key.") );
+    for (int i = 1; i <= 20; ++i)
+        c->add( tr("Example item %1").arg(i), -1 );
+
+    QAbstractItemModel *model = c->model();
+    QModelIndex index = model->index(0, 0);
+    QVariantMap dataMap;
+    dataMap.insert( mimeItemNotes, tr("Some random notes (Shift+F2 to edit)").toUtf8() );
+    model->setData(index, dataMap, contentType::updateData);
+
+    // Highlight found text but don't filter out any items.
+    c->filterItems( QRegExp(QString("|") + searchFor, Qt::CaseInsensitive) );
+
+    QAction *act;
+
+    act = new QAction(c);
+    act->setShortcut( QString("Shift+F2") );
+    connect(act, SIGNAL(triggered()), c, SLOT(editNotes()));
+    c->addAction(act);
+
+    act = new QAction(c);
+    act->setShortcut( QString("F2") );
+    connect(act, SIGNAL(triggered()), c, SLOT(editSelected()));
+    c->addAction(act);
 }

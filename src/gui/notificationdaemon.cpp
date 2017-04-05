@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,7 +20,9 @@
 #include "gui/notificationdaemon.h"
 
 #include "common/common.h"
+#include "common/display.h"
 #include "common/mimetypes.h"
+#include "common/textdata.h"
 #include "gui/notification.h"
 
 #include <QApplication>
@@ -42,7 +44,6 @@ int notificationMargin()
 
 NotificationDaemon::NotificationDaemon(QObject *parent)
     : QObject(parent)
-    , m_lastId(0)
     , m_position(BottomRight)
     , m_notifications()
     , m_opacity(1.0)
@@ -54,24 +55,30 @@ NotificationDaemon::NotificationDaemon(QObject *parent)
     initSingleShotTimer( &m_timerUpdate, 100, this, SLOT(doUpdateNotifications()) );
 }
 
-void NotificationDaemon::create(
-        const QString &title, const QString &msg, ushort icon, int msec, bool clickToShow, int id)
+void NotificationDaemon::create(const QString &title,
+        const QString &msg,
+        const QString &icon,
+        int msec,
+        const QString &id,
+        const NotificationButtons &buttons)
 {
-    Notification *notification = createNotification(id);
+    Notification *notification = createNotification(id, title, buttons);
 
-    notification->setTitle(title);
     notification->setIcon(icon);
     notification->setMessage(msg);
     notification->setInterval(msec);
-    notification->setClickToShowEnabled(clickToShow);
 
     updateNotifications();
 }
 
-void NotificationDaemon::create(
-        const QVariantMap &data, int maxLines, ushort icon, int msec, bool clickToShow, int id)
+void NotificationDaemon::create(const QVariantMap &data,
+        int maxLines,
+        const QString &icon,
+        int msec,
+        const QString &id,
+        const NotificationButtons &buttons)
 {
-    Notification *notification = createNotification(id);
+    Notification *notification = createNotification(id, QString(), buttons);
 
     notification->setIcon(icon);
 
@@ -110,16 +117,15 @@ void NotificationDaemon::create(
         notification->setPixmap(pix);
     } else {
         const QString text = textLabelForData(data, font, QString(), false, width, maxLines);
-        notification->setMessage(text);
+        notification->setMessage(text, Qt::PlainText);
     }
 
     notification->setInterval(msec);
-    notification->setClickToShowEnabled(clickToShow);
 
     updateNotifications();
 }
 
-void NotificationDaemon::updateInterval(int id, int msec)
+void NotificationDaemon::updateInterval(const QString &id, int msec)
 {
     Notification *notification = findNotification(id);
     if (notification)
@@ -159,7 +165,7 @@ void NotificationDaemon::setNotificationStyleSheet(const QString &styleSheet)
     m_styleSheet = styleSheet;
 }
 
-void NotificationDaemon::removeNotification(int id)
+void NotificationDaemon::removeNotification(const QString &id)
 {
     Notification *notification = findNotification(id);
     if (notification)
@@ -179,7 +185,7 @@ void NotificationDaemon::doUpdateNotifications()
 
     int y = (m_position & Top) ? offsetY() : screen.bottom() - offsetY();
 
-    foreach (Notification *notification, m_notifications) {
+    for (auto notification : m_notifications) {
         notification->setOpacity(m_opacity);
         notification->setStyleSheet(m_styleSheet);
         notification->updateIcon();
@@ -208,28 +214,29 @@ void NotificationDaemon::doUpdateNotifications()
     }
 }
 
-Notification *NotificationDaemon::findNotification(int id)
+Notification *NotificationDaemon::findNotification(const QString &id)
 {
-    foreach (Notification *notification, m_notifications) {
+    for (auto notification : m_notifications) {
         if (notification->id() == id)
             return notification;
     }
 
-    return NULL;
+    return nullptr;
 }
 
-Notification *NotificationDaemon::createNotification(int id)
+Notification *NotificationDaemon::createNotification(const QString &id, const QString &title, const NotificationButtons &buttons)
 {
-    Notification *notification = NULL;
-    if (id >= 0)
+    Notification *notification = nullptr;
+    if ( !id.isEmpty() )
         notification = findNotification(id);
 
-    const int newId = (id >= 0) ? id : -(++m_lastId);
-    if (notification == NULL) {
-        notification = new Notification(newId);
+    if (notification == nullptr) {
+        notification = new Notification(id, title, buttons);
         connect(this, SIGNAL(destroyed()), notification, SLOT(deleteLater()));
         connect( notification, SIGNAL(closeNotification(Notification*)),
                  this, SLOT(onNotificationClose(Notification*)) );
+        connect( notification, SIGNAL(buttonClicked(NotificationButton)),
+                 this, SIGNAL(notificationButtonClicked(NotificationButton)) );
         m_notifications.append(notification);
     }
 

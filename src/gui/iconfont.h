@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,6 +24,6 @@ class QFont;
 
 int iconFontSizePixels();
 
-const QFont &iconFont();
+QFont iconFont();
 
 #endif // ICONFONT_H

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,37 +23,29 @@
 #include "common/command.h"
 
 #include <QAction>
-
-class ClipboardBrowser;
+#include <QPointer>
 
 class CommandAction : public QAction
 {
     Q_OBJECT
 public:
-    enum Type { ClipboardCommand, ItemCommand };
-
-    CommandAction(
-            const Command &command,
+    CommandAction(const Command &command,
             const QString &name,
-            Type type,
-            ClipboardBrowser *browser,
-            QObject *parent = NULL);
+            QMenu *parentMenu = nullptr);
 
     const Command &command() const;
 
 signals:
-    void triggerCommand(const Command &command, const QVariantMap &data, int type);
+    void triggerCommand(CommandAction *self, const QString &triggeredShortcut);
 
 protected:
-    bool event(QEvent *event);
+    bool event(QEvent *event) override;
 
 private slots:
     void onTriggered();
 
 private:
     Command m_command;
-    Type m_type;
-    ClipboardBrowser *m_browser;
     QString m_triggeredShortcut;
 };
 

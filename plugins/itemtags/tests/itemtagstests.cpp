@@ -49,13 +49,12 @@ QStringList ItemTagsTests::testTags()
 
 void ItemTagsTests::initTestCase()
 {
-    TEST(m_test->init());
-    cleanup();
+    TEST(m_test->initTestCase());
 }
 
 void ItemTagsTests::cleanupTestCase()
 {
-    TEST(m_test->stopServer());
+    TEST(m_test->cleanupTestCase());
 }
 
 void ItemTagsTests::init()
@@ -202,19 +201,67 @@ void ItemTagsTests::searchTags()
 
     RUN(args << "keys" << "RIGHT", "");
     RUN(args << "keys" << ":tag1", "");
-    waitFor(waitMsSearch);
     RUN(args << "keys" << "TAB" << "CTRL+A", "");
     RUN(args << "testSelected", tab1 + " 0 0 1\n");
 
     RUN(args << "keys" << "ESCAPE", "");
     RUN(args << "keys" << ":tag2", "");
-    waitFor(waitMsSearch);
     RUN(args << "keys" << "TAB" << "CTRL+A", "");
     RUN(args << "testSelected", tab1 + " 1 1 2\n");
 
     RUN(args << "keys" << "ESCAPE", "");
     RUN(args << "keys" << ":tag3", "");
-    waitFor(waitMsSearch);
     RUN(args << "keys" << "TAB" << "CTRL+A", "");
     RUN(args << "testSelected", tab1 + " 2 2\n");
+}
+
+void ItemTagsTests::tagSelected()
+{
+    const auto script = R"(
+        setCommands([{
+            name: 'Add Tag x',
+            inMenu: true,
+            shortcuts: ['Ctrl+F1'],
+            cmd: 'copyq: plugins.itemtags.tag("x")'
+          },
+          {
+            name: 'Add Tag y',
+            inMenu: true,
+            shortcuts: ['Ctrl+F2'],
+            cmd: 'copyq: plugins.itemtags.tag("y")'
+          }])
+        )";
+    RUN(script, "");
+
+    RUN("add" << "A" << "B" << "C", "");
+    RUN("keys" << "CTRL+F1", "");
+    RUN("plugins.itemtags.tags(0)", "x\n");
+
+    RUN("selectItems(0,1)", "true\n");
+    RUN("keys" << "CTRL+F2", "");
+    RUN("plugins.itemtags.tags(0)", "x\ny\n");
+    RUN("plugins.itemtags.tags(1)", "y\n");
+}
+
+void ItemTagsTests::untagSelected()
+{
+    const auto script = R"(
+        setCommands([{
+            name: 'Remove Tag x',
+            inMenu: true,
+            shortcuts: ['Ctrl+F1'],
+            cmd: 'copyq: plugins.itemtags.untag("x")'
+        }])
+        )";
+    RUN(script, "");
+
+    RUN("add" << "A" << "B" << "C", "");
+    RUN("plugins.itemtags.tag('x', 0, 2)", "");
+    RUN("plugins.itemtags.tag('y', 1, 2)", "");
+
+    RUN("selectItems(0,1,2)", "true\n");
+    RUN("keys" << "CTRL+F1", "");
+    RUN("plugins.itemtags.tags(0)", "");
+    RUN("plugins.itemtags.tags(1)", "y\n");
+    RUN("plugins.itemtags.tags(2)", "y\n");
 }

@@ -40,20 +40,18 @@ using namespace FakeVim::Internal;
 
 namespace {
 
-typedef QLatin1String _;
-
 class TextEditWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    TextEditWidget(QTextEdit *editor, QWidget *parent = NULL)
+    explicit TextEditWidget(QTextEdit *editor, QWidget *parent = nullptr)
         : QWidget(parent)
         , m_textEdit(editor)
-        , m_handler(new FakeVimHandler(editor, NULL))
+        , m_handler(new FakeVimHandler(editor, nullptr))
         , m_hasBlockSelection(false)
     {
-        QVBoxLayout *layout = new QVBoxLayout(this);
+        auto layout = new QVBoxLayout(this);
         layout->setMargin(0);
         layout->addWidget(editor);
 
@@ -71,7 +69,7 @@ public:
 
         editor->viewport()->installEventFilter(this);
 
-        editor->setStyleSheet("*{background:transparent}");
+        editor->setStyleSheet("QTextEdit{background:transparent}");
     }
 
     ~TextEditWidget()
@@ -80,7 +78,7 @@ public:
         m_handler->deleteLater();
     }
 
-    bool eventFilter(QObject *, QEvent *ev)
+    bool eventFilter(QObject *, QEvent *ev) override
     {
         if ( ev->type() != QEvent::Paint )
             return false;
@@ -267,8 +265,8 @@ private:
 
     bool m_hasBlockSelection;
 
-    typedef QAbstractTextDocumentLayout::Selection Selection;
-    typedef QVector<Selection> SelectionList;
+    using Selection = QAbstractTextDocumentLayout::Selection;
+    using SelectionList = QVector<Selection>;
     SelectionList m_searchSelection;
     SelectionList m_selection;
 
@@ -280,7 +278,7 @@ class Proxy : public QObject
     Q_OBJECT
 
 public:
-    Proxy(TextEditWidget *editorWidget, QStatusBar *statusBar, QObject *parent = NULL)
+    Proxy(TextEditWidget *editorWidget, QStatusBar *statusBar, QObject *parent = nullptr)
       : QObject(parent), m_editorWidget(editorWidget), m_statusBar(statusBar)
     {}
 
@@ -410,10 +408,10 @@ public:
         m_statusBar = new QStatusBar(this);
 
         // Connect slots to FakeVimHandler signals.
-        Proxy *proxy = new Proxy(m_editor, m_statusBar, this);
+        auto proxy = new Proxy(m_editor, m_statusBar, this);
         connectSignals( &m_editor->fakeVimHandler(), proxy );
 
-        QVBoxLayout *layout = new QVBoxLayout(this);
+        auto layout = new QVBoxLayout(this);
         layout->addWidget(m_editor);
         layout->addWidget(m_statusBar);
         setFocusProxy(m_editor);
@@ -430,7 +428,7 @@ signals:
     void invalidate();
 
 protected:
-    bool event(QEvent *event)
+    bool event(QEvent *event) override
     {
         if (event->type() == QEvent::PaletteChange) {
             QPalette pal = palette();
@@ -489,11 +487,6 @@ ItemFakeVim::ItemFakeVim(ItemWidget *childItem, const QString &sourceFileName)
 {
 }
 
-void ItemFakeVim::setCurrent(bool current)
-{
-    m_childItem->setCurrent(current);
-}
-
 void ItemFakeVim::highlight(const QRegExp &re, const QFont &highlightFont, const QPalette &highlightPalette)
 {
     m_childItem->setHighlight(re, highlightFont, highlightPalette);
@@ -518,10 +511,10 @@ void ItemFakeVim::setEditorData(QWidget *editor, const QModelIndex &index) const
     m_childItem->setEditorData( getItemEditorWidget(editor), index );
 
     // Position text cursor at the begining of text instead of selecting all.
-    Editor *ed = qobject_cast<Editor*>(editor);
+    auto ed = qobject_cast<Editor*>(editor);
     if (ed) {
-        QTextEdit *editor = ed->textEditWidget()->editor();
-        editor->setTextCursor(QTextCursor(editor->document()));
+        auto textEdit = ed->textEditWidget()->editor();
+        textEdit->setTextCursor( QTextCursor(textEdit->document()) );
     }
 }
 
@@ -541,14 +534,17 @@ QObject *ItemFakeVim::createExternalEditor(const QModelIndex &index, QWidget *pa
     return m_childItem->createExternalEditor(index, parent);
 }
 
+void ItemFakeVim::setTagged(bool tagged)
+{
+    return m_childItem->setTagged(tagged);
+}
+
 ItemFakeVimLoader::ItemFakeVimLoader()
     : m_enabled(false)
 {
 }
 
-ItemFakeVimLoader::~ItemFakeVimLoader()
-{
-}
+ItemFakeVimLoader::~ItemFakeVimLoader() = default;
 
 QVariant ItemFakeVimLoader::icon() const
 {
@@ -584,7 +580,7 @@ QWidget *ItemFakeVimLoader::createSettingsWidget(QWidget *parent)
 
 ItemWidget *ItemFakeVimLoader::transform(ItemWidget *itemWidget, const QModelIndex &)
 {
-    return m_enabled ? new ItemFakeVim(itemWidget, m_sourceFileName) : NULL;
+    return m_enabled ? new ItemFakeVim(itemWidget, m_sourceFileName) : nullptr;
 }
 
 QObject *ItemFakeVimLoader::tests(const TestInterfacePtr &test) const
@@ -598,7 +594,7 @@ QObject *ItemFakeVimLoader::tests(const TestInterfacePtr &test) const
     return tests;
 #else
     Q_UNUSED(test);
-    return NULL;
+    return nullptr;
 #endif
 }
 

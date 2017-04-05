@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,89 +24,69 @@
 #include "common/contenttype.h"
 #include "common/log.h"
 #include "common/mimetypes.h"
+#include "common/textdata.h"
+#include "item/itemstore.h"
 #include "item/itemwidget.h"
 #include "item/serialize.h"
+#include "platform/platformnativeinterface.h"
 
 #include <QCoreApplication>
 #include <QDir>
-#include <QFile>
+#include <QIODevice>
 #include <QLabel>
+#include <QMetaObject>
 #include <QModelIndex>
 #include <QPluginLoader>
 
-namespace {
+#include <algorithm>
 
-const int dummyItemMaxChars = 4096;
+namespace {
 
 bool findPluginDir(QDir *pluginsDir)
 {
-#if defined(COPYQ_WS_X11)
-    pluginsDir->setPath( qApp->applicationDirPath() );
-    if ( pluginsDir->dirName() == QString("bin")
-         && pluginsDir->cdUp()
-         && (pluginsDir->cd("lib64") || pluginsDir->cd("lib"))
-         && pluginsDir->cd("copyq") )
-    {
-        // OK, installed in /usr/local/bin or /usr/bin.
-    } else {
-        pluginsDir->setPath( qApp->applicationDirPath() );
-        if ( pluginsDir->cd("plugins") ) {
-            // OK, plugins in same directory as executable.
-            pluginsDir->cd("copyq");
-        } else {
-            return false;
-        }
-    }
-
-#elif defined(Q_OS_MAC)
-    pluginsDir->setPath( qApp->applicationDirPath() );
-    if (pluginsDir->dirName() != "MacOS") {
-        return false;
-    }
-
-    if ( pluginsDir->cdUp() // Contents
-            && pluginsDir->cd("Plugins")
-            && pluginsDir->cd("copyq"))
-    {
-        // OK, found it in the bundle
-        COPYQ_LOG("Found plugins in application bundle");
-    } else if (
-            pluginsDir->setPath( qApp->applicationDirPath() ),
-            pluginsDir->cdUp() // Contents
-            && pluginsDir->cdUp() // copyq.app
-            && pluginsDir->cdUp() // repo root
-            && pluginsDir->cd("plugins")) {
-        COPYQ_LOG("Found plugins in build tree");
-    } else {
-        return false;
-    }
-
-#else
-    pluginsDir->setPath( qApp->applicationDirPath() );
-    if ( !pluginsDir->cd("plugins") )
-        return false;
-#endif
-
-    return pluginsDir->isReadable();
+    return createPlatformNativeInterface()->findPluginDir(pluginsDir)
+            && pluginsDir->isReadable();
 }
 
-bool priorityLessThan(const ItemLoaderInterface *lhs, const ItemLoaderInterface *rhs)
+bool priorityLessThan(const ItemLoaderPtr &lhs, const ItemLoaderPtr &rhs)
 {
     return lhs->priority() > rhs->priority();
 }
 
+void trySetPixmap(QLabel *label, const QVariantMap &data, int height)
+{
+    const auto imageFormats = {
+        "image/svg+xml",
+        "image/png",
+        "image/bmp",
+        "image/jpeg",
+        "image/gif"
+    };
+
+    for (const auto &format : imageFormats) {
+        QPixmap pixmap;
+        if (pixmap.loadFromData(data.value(format).toByteArray())) {
+            if (height > 0)
+                pixmap = pixmap.scaledToHeight(height, Qt::SmoothTransformation);
+            label->setPixmap(pixmap);
+            break;
+        }
+    }
+}
+
+
 /** Sort plugins by prioritized list of names. */
 class PluginSorter {
 public:
-    PluginSorter(const QStringList &pluginNames) : m_order(pluginNames) {}
+    explicit PluginSorter(const QStringList &pluginNames) : m_order(pluginNames) {}
 
-    int value(const ItemLoaderInterface *item) const
+    int value(const ItemLoaderPtr &item) const
     {
         const int i = m_order.indexOf( item->id() );
         return i == -1 ? m_order.indexOf( item->name() ) : i;
     }
 
-    bool operator()(const ItemLoaderInterface *lhs, const ItemLoaderInterface *rhs) const
+    bool operator()(const ItemLoaderPtr &lhs, const ItemLoaderPtr &rhs) const
     {
         const int l = value(lhs);
         const int r = value(rhs);
@@ -126,103 +106,170 @@ private:
 
 class DummyItem : public QLabel, public ItemWidget {
 public:
-    DummyItem(const QModelIndex &index, QWidget *parent)
+    DummyItem(const QModelIndex &index, QWidget *parent, bool preview)
         : QLabel(parent)
         , ItemWidget(this)
         , m_hasText(false)
+        , m_data(index.data(contentType::data).toMap())
     {
-        if ( index.data(contentType::hasText).toBool() ) {
-            m_hasText = true;
-            setMargin(0);
-            setWordWrap(true);
-            setTextFormat(Qt::PlainText);
-            setText( index.data(contentType::text).toString().left(dummyItemMaxChars) );
-            setTextInteractionFlags(Qt::TextSelectableByMouse);
-            setFocusPolicy(Qt::NoFocus);
-        } else {
-            setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-            setMaximumSize(0, 0);
+        m_hasText = index.data(contentType::hasText).toBool();
+        setMargin(0);
+        setWordWrap(true);
+        setTextFormat(Qt::PlainText);
+        setTextInteractionFlags(Qt::TextSelectableByMouse);
+        setFocusPolicy(Qt::NoFocus);
+        setContextMenuPolicy(Qt::NoContextMenu);
+
+        if (!preview)
+            setFixedHeight(sizeHint().height());
+
+        if ( !index.data(contentType::isHidden).toBool() ) {
+            const int height = preview ? -1 : contentsRect().height();
+            trySetPixmap(this, m_data, height);
         }
 
-        setContextMenuPolicy(Qt::NoContextMenu);
+        if (preview && !pixmap()) {
+            setAlignment(Qt::AlignLeft | Qt::AlignTop);
+            QString label = getTextData(m_data);
+            if (label.isEmpty())
+                label = textLabelForData(m_data);
+            setText(label);
+        }
     }
 
-    QWidget *createEditor(QWidget *parent) const
+    QWidget *createEditor(QWidget *parent) const override
     {
-        return m_hasText ? ItemWidget::createEditor(parent) : NULL;
+        return m_hasText ? ItemWidget::createEditor(parent) : nullptr;
     }
 
-    virtual void updateSize(const QSize &maximumSize, int idealWidth)
+    void updateSize(const QSize &, int idealWidth) override
     {
-        if (m_hasText)
-            ItemWidget::updateSize(maximumSize, idealWidth);
+        setFixedWidth(idealWidth);
+
+        if (!pixmap()) {
+            const int width = contentsRect().width();
+            const QString label =
+                    textLabelForData(m_data, font(), QString(), false, width, 1);
+            setText(label);
+        }
+    }
+
+    void setTagged(bool tagged) override
+    {
+        setVisible( !tagged || (m_hasText && !m_data.contains(mimeHidden)) );
     }
 
 private:
     bool m_hasText;
+    QVariantMap m_data;
+    QString m_imageFormat;
+};
+
+class DummySaver : public ItemSaverInterface
+{
+public:
+    bool saveItems(const QString & /* tabName */, const QAbstractItemModel &model, QIODevice *file) override
+    {
+        return serializeData(model, file);
+    }
 };
 
 class DummyLoader : public ItemLoaderInterface
 {
 public:
-    explicit DummyLoader(ItemFactory *factory) : m_factory(factory) {}
+    QString id() const override { return QString(); }
+    QString name() const override { return QString(); }
+    QString author() const override { return QString(); }
+    QString description() const override { return QString(); }
 
-    QString id() const { return QString(); }
-    QString name() const { return QString(); }
-    QString author() const { return QString(); }
-    QString description() const { return QString(); }
-
-    ItemWidget *create(const QModelIndex &index, QWidget *parent) const
+    ItemWidget *create(const QModelIndex &index, QWidget *parent, bool preview) const override
     {
-        return new DummyItem(index, parent);
+        return new DummyItem(index, parent, preview);
     }
 
-    bool canLoadItems(QFile *) const { return true; }
+    bool canLoadItems(QIODevice *) const override { return true; }
 
-    bool canSaveItems(const QAbstractItemModel &) const { return true; }
+    bool canSaveItems(const QString &) const override { return true; }
 
-    bool loadItems(QAbstractItemModel *model, QFile *file)
+    ItemSaverPtr loadItems(const QString &, QAbstractItemModel *model, QIODevice *file, int maxItems) override
     {
         if ( file->size() > 0 ) {
-            if ( !deserializeData(model, file) ) {
+            if ( !deserializeData(model, file, maxItems) ) {
                 model->removeRows(0, model->rowCount());
-                const QString errorString =
-                        QObject::tr("Item file %1 is corrupted or some CopyQ plugins are missing!")
-                        .arg(quoteString(file->fileName()) );
-                m_factory->emitError(errorString);
-                return false;
+                return nullptr;
             }
         }
 
-        return true;
+        return std::make_shared<DummySaver>();
     }
 
-    bool saveItems(const QAbstractItemModel &model, QFile *file)
+    ItemSaverPtr initializeTab(const QString &, QAbstractItemModel *, int) override
     {
-        return serializeData(model, file);
+        return std::make_shared<DummySaver>();
     }
 
-    bool initializeTab(QAbstractItemModel *)
-    {
-        return true;
-    }
-
-    bool matches(const QModelIndex &index, const QRegExp &re) const
+    bool matches(const QModelIndex &index, const QRegExp &re) const override
     {
         const QString text = index.data(contentType::text).toString();
         return re.indexIn(text) != -1;
     }
-
-private:
-    ItemFactory *m_factory;
 };
+
+ItemSaverPtr transformSaver(
+        QAbstractItemModel *model,
+        const ItemSaverPtr &saverToTransform, const ItemLoaderPtr &currentLoader,
+        const ItemLoaderList &loaders)
+{
+    ItemSaverPtr newSaver = saverToTransform;
+
+    for ( auto &loader : loaders ) {
+        if (loader != currentLoader)
+            newSaver = loader->transformSaver(newSaver, model);
+    }
+
+    return newSaver;
+}
+
+ItemSaverPtr saveWithOther(
+        const QString &tabName,
+        QAbstractItemModel *model,
+        const ItemSaverPtr &currentSaver, ItemLoaderPtr *currentLoader,
+        const ItemLoaderList &loaders,
+        int maxItems)
+{
+    ItemLoaderPtr newLoader;
+
+    for ( auto &loader : loaders ) {
+        if ( loader->canSaveItems(tabName) ) {
+            newLoader = loader;
+            break;
+        }
+    }
+
+    if (!newLoader || newLoader == *currentLoader)
+        return currentSaver;
+
+    COPYQ_LOG( QString("Tab \"%1\": Saving items using other plugin")
+               .arg(tabName) );
+
+    auto newSaver = newLoader->initializeTab(tabName, model, maxItems);
+    if ( !newSaver || !saveItems(tabName, *model, newSaver) ) {
+        COPYQ_LOG( QString("Tab \"%1\": Failed to re-save items")
+                   .arg(tabName) );
+        return currentSaver;
+    }
+
+    *currentLoader = newLoader;
+    return newSaver;
+}
+
 
 } // namespace
 
 ItemFactory::ItemFactory(QObject *parent)
     : QObject(parent)
     , m_loaders()
-    , m_dummyLoader(new DummyLoader(this))
+    , m_dummyLoader(std::make_shared<DummyLoader>())
     , m_disabledLoaders()
     , m_loaderChildren()
 {
@@ -237,43 +284,59 @@ ItemFactory::~ItemFactory()
     // Plugins are unloaded at application exit.
 }
 
-ItemWidget *ItemFactory::createItem(
-        ItemLoaderInterface *loader, const QModelIndex &index, QWidget *parent)
+ItemWidget *ItemFactory::createItem(const ItemLoaderPtr &loader, const QModelIndex &index,
+        QWidget *parent, bool antialiasing, bool transform, bool preview)
 {
-    ItemWidget *item = loader->create(index, parent);
+    ItemWidget *item = loader->create(index, parent, preview);
 
-    if (item != NULL) {
-        item = transformItem(item, index);
+    if (item != nullptr) {
+        if (transform)
+            item = transformItem(item, index);
         QWidget *w = item->widget();
         QString notes = index.data(contentType::notes).toString();
         if (!notes.isEmpty())
             w->setToolTip(notes);
+
+        if (!antialiasing) {
+            QFont f = w->font();
+            f.setStyleStrategy(QFont::NoAntialias);
+            w->setFont(f);
+            for (auto child : w->findChildren<QWidget *>("item_child"))
+                child->setFont(f);
+        }
 
         m_loaderChildren[w] = loader;
         connect(w, SIGNAL(destroyed(QObject*)), SLOT(loaderChildDestroyed(QObject*)));
         return item;
     }
 
-    return NULL;
+    return nullptr;
 }
 
-ItemWidget *ItemFactory::createItem(const QModelIndex &index, QWidget *parent)
+ItemWidget *ItemFactory::createItem(
+        const QModelIndex &index, QWidget *parent, bool antialiasing, bool transform, bool preview)
 {
-    foreach ( ItemLoaderInterface *loader, enabledLoaders() ) {
-        ItemWidget *item = createItem(loader, index, parent);
-        if (item != NULL)
+    for ( auto &loader : enabledLoaders() ) {
+        ItemWidget *item = createItem(loader, index, parent, antialiasing, transform, preview);
+        if (item != nullptr)
             return item;
     }
 
-    return NULL;
+    return nullptr;
+}
+
+ItemWidget *ItemFactory::createSimpleItem(
+        const QModelIndex &index, QWidget *parent, bool antialiasing)
+{
+    return createItem(m_dummyLoader, index, parent, antialiasing);
 }
 
 QStringList ItemFactory::formatsToSave() const
 {
     QStringList formats;
 
-    foreach ( const ItemLoaderInterface *loader, enabledLoaders() ) {
-        foreach ( const QString &format, loader->formatsToSave() ) {
+    for ( const auto &loader : enabledLoaders() ) {
+        for ( const auto &format : loader->formatsToSave() ) {
             if ( !formats.contains(format) )
                 formats.append(format);
         }
@@ -292,43 +355,53 @@ QStringList ItemFactory::formatsToSave() const
 
 void ItemFactory::setPluginPriority(const QStringList &pluginNames)
 {
-    qSort( m_loaders.begin(), m_loaders.end(), PluginSorter(pluginNames) );
+    std::sort( m_loaders.begin(), m_loaders.end(), PluginSorter(pluginNames) );
 }
 
-void ItemFactory::setLoaderEnabled(ItemLoaderInterface *loader, bool enabled)
+void ItemFactory::setLoaderEnabled(const ItemLoaderPtr &loader, bool enabled)
 {
-    if (enabled)
-        m_disabledLoaders.remove(loader);
-    else
-        m_disabledLoaders.insert(loader);
+    if ( isLoaderEnabled(loader) != enabled ) {
+        if (enabled)
+            m_disabledLoaders.remove( m_disabledLoaders.indexOf(loader) );
+        else
+            m_disabledLoaders.append(loader);
+    }
 }
 
-bool ItemFactory::isLoaderEnabled(const ItemLoaderInterface *loader) const
+bool ItemFactory::isLoaderEnabled(const ItemLoaderPtr &loader) const
 {
     return !m_disabledLoaders.contains(loader);
 }
 
-ItemLoaderInterface *ItemFactory::loadItems(QAbstractItemModel *model, QFile *file)
+ItemSaverPtr ItemFactory::loadItems(const QString &tabName, QAbstractItemModel *model, QIODevice *file, int maxItems)
 {
-    foreach ( ItemLoaderInterface *loader, enabledLoaders() ) {
+    auto loaders = enabledLoaders();
+    for ( auto &loader : loaders ) {
         file->seek(0);
         if ( loader->canLoadItems(file) ) {
             file->seek(0);
-            return loader->loadItems(model, file) ? loader : NULL;
+            auto saver = loader->loadItems(tabName, model, file, maxItems);
+            if (!saver)
+                return nullptr;
+            saver = saveWithOther(tabName, model, saver, &loader, loaders, maxItems);
+            return transformSaver(model, saver, loader, loaders);
         }
     }
 
-    return NULL;
+    return nullptr;
 }
 
-ItemLoaderInterface *ItemFactory::initializeTab(QAbstractItemModel *model)
+ItemSaverPtr ItemFactory::initializeTab(const QString &tabName, QAbstractItemModel *model, int maxItems)
 {
-    foreach ( ItemLoaderInterface *loader, enabledLoaders() ) {
-        if ( loader->canSaveItems(*model) )
-            return loader->initializeTab(model) ? loader : NULL;
+    const auto loaders = enabledLoaders();
+    for ( auto &loader : loaders ) {
+        if ( loader->canSaveItems(tabName) ) {
+            const auto saver = loader->initializeTab(tabName, model, maxItems);
+            return saver ? transformSaver(model, saver, loader, loaders) : nullptr;
+        }
     }
 
-    return NULL;
+    return nullptr;
 }
 
 bool ItemFactory::matches(const QModelIndex &index, const QRegExp &re) const
@@ -336,13 +409,13 @@ bool ItemFactory::matches(const QModelIndex &index, const QRegExp &re) const
     // Match formats if the filter expression contains single '/'.
     if (re.pattern().count('/') == 1) {
         const QVariantMap data = index.data(contentType::data).toMap();
-        foreach (const QString &format, data.keys()) {
+        for (const auto &format : data.keys()) {
             if (re.exactMatch(format))
                 return true;
         }
     }
 
-    foreach ( const ItemLoaderInterface *loader, enabledLoaders() ) {
+    for ( const auto &loader : enabledLoaders() ) {
         if ( isLoaderEnabled(loader) && loader->matches(index, re) )
             return true;
     }
@@ -350,28 +423,27 @@ bool ItemFactory::matches(const QModelIndex &index, const QRegExp &re) const
     return false;
 }
 
-QString ItemFactory::scripts() const
+QList<ItemScriptable*> ItemFactory::scriptableObjects(QObject *parent) const
 {
-    QString script = "var plugins = {}\n";
+    QList<ItemScriptable*> scriptables;
 
-    foreach ( const ItemLoaderInterface *loader, enabledLoaders() )
-        script.append( loader->script() + '\n' );
+    for ( const auto &loader : enabledLoaders() ) {
+        auto scriptable = loader->scriptableObject(parent);
+        if (scriptable) {
+            scriptable->setObjectName( loader->id() );
+            scriptables.append(scriptable);
+        }
+    }
 
-    return script;
+    return scriptables;
 }
 
 QList<Command> ItemFactory::commands() const
 {
     QList<Command> commands;
 
-    foreach ( const ItemLoaderInterface *loader, enabledLoaders() ) {
-        QList <Command> subCommands = loader->commands();
-
-        for (int i = 0; i < subCommands.size(); ++i)
-            subCommands[i].name.prepend(loader->name() + '|');
-
-        commands << subCommands;
-    }
+    for ( const auto &loader : enabledLoaders() )
+        commands << loader->commands();
 
     return commands;
 }
@@ -387,14 +459,15 @@ void ItemFactory::loaderChildDestroyed(QObject *obj)
     m_loaderChildren.remove(obj);
 }
 
-ItemWidget *ItemFactory::otherItemLoader(const QModelIndex &index, ItemWidget *current, bool next)
+ItemWidget *ItemFactory::otherItemLoader(
+        const QModelIndex &index, ItemWidget *current, bool next, bool antialiasing)
 {
-    Q_ASSERT(current->widget() != NULL);
+    Q_ASSERT(current->widget() != nullptr);
 
-    QWidget *w = current->widget();
-    ItemLoaderInterface *currentLoader = m_loaderChildren[w];
+    auto w = current->widget();
+    auto currentLoader = m_loaderChildren.value(w);
     if (!currentLoader)
-        return NULL;
+        return nullptr;
 
 
     const ItemLoaderList loaders = enabledLoaders();
@@ -410,12 +483,12 @@ ItemWidget *ItemFactory::otherItemLoader(const QModelIndex &index, ItemWidget *c
         else if (i < 0)
             i = size - 1;
 
-        ItemWidget *item = createItem(loaders[i], index, w->parentWidget());
-        if (item != NULL)
+        ItemWidget *item = createItem(loaders[i], index, w->parentWidget(), antialiasing);
+        if (item != nullptr)
             return item;
     }
 
-    return NULL;
+    return nullptr;
 }
 
 bool ItemFactory::loadPlugins()
@@ -430,17 +503,17 @@ bool ItemFactory::loadPlugins()
         return false;
 #endif
 
-    foreach (QString fileName, pluginsDir.entryList(QDir::Files)) {
+    for (const auto &fileName : pluginsDir.entryList(QDir::Files)) {
         if ( QLibrary::isLibrary(fileName) ) {
             const QString path = pluginsDir.absoluteFilePath(fileName);
             QPluginLoader pluginLoader(path);
             QObject *plugin = pluginLoader.instance();
             log( QObject::tr("Loading plugin: %1").arg(path), LogNote );
-            if (plugin == NULL) {
+            if (plugin == nullptr) {
                 log( pluginLoader.errorString(), LogError );
             } else {
-                ItemLoaderInterface *loader = qobject_cast<ItemLoaderInterface *>(plugin);
-                if (loader == NULL)
+                ItemLoaderPtr loader( qobject_cast<ItemLoaderInterface *>(plugin) );
+                if (loader == nullptr)
                     pluginLoader.unload();
                 else
                     addLoader(loader);
@@ -448,7 +521,7 @@ bool ItemFactory::loadPlugins()
         }
     }
 
-    qSort(m_loaders.begin(), m_loaders.end(), priorityLessThan);
+    std::sort(m_loaders.begin(), m_loaders.end(), priorityLessThan);
 
     return true;
 }
@@ -457,7 +530,7 @@ ItemLoaderList ItemFactory::enabledLoaders() const
 {
     ItemLoaderList enabledLoaders;
 
-    foreach (ItemLoaderInterface *loader, m_loaders) {
+    for (auto &loader : m_loaders) {
         if ( isLoaderEnabled(loader) )
             enabledLoaders.append(loader);
     }
@@ -469,11 +542,10 @@ ItemLoaderList ItemFactory::enabledLoaders() const
 
 ItemWidget *ItemFactory::transformItem(ItemWidget *item, const QModelIndex &index)
 {
-    for ( int i = 0; i < m_loaders.size(); ++i ) {
-        ItemLoaderInterface *loader = m_loaders[i];
+    for (auto &loader : m_loaders) {
         if ( isLoaderEnabled(loader) ) {
             ItemWidget *newItem = loader->transform(item, index);
-            if (newItem != NULL)
+            if (newItem != nullptr)
                 item = newItem;
         }
     }
@@ -481,10 +553,17 @@ ItemWidget *ItemFactory::transformItem(ItemWidget *item, const QModelIndex &inde
     return item;
 }
 
-void ItemFactory::addLoader(ItemLoaderInterface *loader)
+void ItemFactory::addLoader(const ItemLoaderPtr &loader)
 {
     m_loaders.append(loader);
     const QObject *signaler = loader->signaler();
-    if (signaler)
-        connect( signaler, SIGNAL(error(QString)), this, SIGNAL(error(QString)) );
+    if (signaler) {
+        const auto loaderMetaObject = signaler->metaObject();
+
+        if ( loaderMetaObject->indexOfSignal("error(QString)") != -1 )
+            connect( signaler, SIGNAL(error(QString)), this, SIGNAL(error(QString)) );
+
+        if ( loaderMetaObject->indexOfSignal("addCommands(QList<Command>)") != -1 )
+            connect( signaler, SIGNAL(addCommands(QList<Command>)), this, SIGNAL(addCommands(QList<Command>)) );
+    }
 }

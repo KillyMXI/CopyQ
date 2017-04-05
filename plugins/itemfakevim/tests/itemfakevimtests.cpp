@@ -36,13 +36,12 @@ QString ItemFakeVimTests::fileNameToSource()
 
 void ItemFakeVimTests::initTestCase()
 {
-    TEST(m_test->init());
-    cleanup();
+    TEST(m_test->initTestCase());
 }
 
 void ItemFakeVimTests::cleanupTestCase()
 {
-    TEST(m_test->stopServer());
+    TEST(m_test->cleanupTestCase());
 }
 
 void ItemFakeVimTests::init()
@@ -50,7 +49,7 @@ void ItemFakeVimTests::init()
     TEST(m_test->init());
 
     // Don't use default external editor.
-    RUN("config" << "editor" << "", "");
+    RUN("config" << "editor" << "", "\n");
 }
 
 void ItemFakeVimTests::cleanup()

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,7 +19,8 @@
 
 #include "commandhelpbutton.h"
 
-#include "common/common.h"
+#include "common/display.h"
+#include "common/textdata.h"
 #include "gui/iconfactory.h"
 #include "gui/icons.h"
 #include "gui/windowgeometryguard.h"
@@ -35,33 +36,40 @@
 
 namespace {
 
+const auto htmlTemplate = R"(
+<html>
+    <head>
+        <style type="text/css">
+            .args{font-family:monospace}
+            .example{font-family:monospace; margin:1em}
+            .example-box{background:#777; padding-right:1em}
+            .example-margin{padding-right:.5em}
+            .description{margin: 0 2em 0 2em}
+        </style>
+    </head>
+    <body>
+        %1
+    </body>
+</html>)";
+
+const auto htmlExampleTemplate = R"(
+<table class="example"><tr>
+<td class="example-box"></td>
+<td class="example-margin"></td>
+<td>%1</td>
+</tr></table>
+)";
+
 QString example(const QString &content)
 {
-    return "<table class='example'><tr>"
-           "<td class='example-box'></td>"
-           "<td class='example-margin'></td>"
-           "<td>" + escapeHtml(content) + "</td>"
-           "</tr></table>";
+    return QString(htmlExampleTemplate)
+            .arg( escapeHtml(content) );
 }
 
 QString help()
 {
-    QString help =
-        "<html>"
-
-        "<head>"
-        "<style type=\"text/css\">"
-        ".args{font-family:monospace}"
-        ".example{font-family:monospace; margin:1em}"
-        ".example-box{background:#777; padding-right:1em}"
-        ".example-margin{padding-right:.5em}"
-        ".description{margin: 0 2em 0 2em}"
-        "</style>"
-        "</head>"
-
-        "<body>"
-
-            "<p>"
+    auto help = QString()
+            + "<p>"
             + escapeHtml( CommandHelpButton::tr(
                               "Command contains list of programs with arguments which will be executed. For example:") )
             + example("copyq add \"1 + 2 = 3\"; copyq show\ncopyq popup \"1 + 2\" \"= 3\"")
@@ -92,7 +100,7 @@ QString help()
     help.append( example("copyq eval 'show(\"" + tabName + "\")'") );
     help.append( example("copyq: show('" + tabName + "')") );
 
-    foreach (const CommandHelp &hlp, commandHelp()) {
+    for (const auto &hlp : commandHelp()) {
         if ( !hlp.cmd.isNull() ) {
             help.append( QString("<p><b>%1</b>"
                                  "&nbsp;<span class='args'>%2</span>"
@@ -103,14 +111,12 @@ QString help()
         }
     }
 
-    help.append("</body></html>");
-
-    return help;
+    return QString(htmlTemplate).arg(help);
 }
 
 QVBoxLayout *createLayout(QWidget *parent)
 {
-    QVBoxLayout *layout = new QVBoxLayout(parent);
+    auto layout = new QVBoxLayout(parent);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     return layout;
@@ -121,7 +127,7 @@ QVBoxLayout *createLayout(QWidget *parent)
 CommandHelpButton::CommandHelpButton(QWidget *parent)
     : QWidget(parent)
     , m_button(new QToolButton(this))
-    , m_help(NULL)
+    , m_help(nullptr)
 {
     m_button->setToolTip( tr("Show command help (F1)") );
     m_button->setShortcut(QKeySequence(Qt::Key_F1));
@@ -144,7 +150,7 @@ void CommandHelpButton::showHelp()
         m_help->setObjectName("commandHelpDialog");
         WindowGeometryGuard::create(m_help);
 
-        QTextBrowser *browser = new QTextBrowser(this);
+        auto browser = new QTextBrowser(this);
         QVBoxLayout *layout = createLayout(m_help);
         layout->addWidget(browser);
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -17,6 +17,7 @@
     along with CopyQ.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "app/applicationexceptionhandler.h"
 #include "common/log.h"
 #include "common/settings.h"
 
@@ -29,7 +30,10 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QKeyEvent>
 #include <QSettings>
+#include <QStringList>
+#include <QWidget>
 
 #include <qt_windows.h>
 
@@ -39,11 +43,33 @@
 
 namespace {
 
-void setBinaryStdin()
+void setBinaryFor(int fd)
 {
-    const int result = _setmode( _fileno( stdin ), _O_BINARY );
-    if (result == -1)
-        log("Failed to set binary stdin.", LogError);
+    _setmode(fd, _O_BINARY);
+}
+
+bool isPortableVersion()
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString uninstPath = appDir + "/unins000.exe";
+    return !QFile::exists(uninstPath);
+}
+
+QDir configFolder(bool *isPortable)
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString path = appDir + "/config";
+    QDir dir(path);
+
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+
+    *isPortable = isPortableVersion()
+            && QFileInfo(appDir).isWritable()
+            && dir.mkpath(".")
+            && dir.isReadable()
+            && QFileInfo(dir.absolutePath()).isWritable();
+
+    return dir;
 }
 
 void migrateDirectory(const QString oldPath, const QString newPath)
@@ -54,7 +80,7 @@ void migrateDirectory(const QString oldPath, const QString newPath)
     if ( oldDir.exists() ) {
         newDir.mkpath(".");
 
-        foreach ( const QString &fileName, oldDir.entryList(QDir::Files) ) {
+        for ( const auto &fileName : oldDir.entryList(QDir::Files) ) {
             const QString oldFileName = oldDir.absoluteFilePath(fileName);
             const QString newFileName = newDir.absoluteFilePath(fileName);
             COPYQ_LOG( QString("Migrating \"%1\" -> \"%2\"")
@@ -65,27 +91,22 @@ void migrateDirectory(const QString oldPath, const QString newPath)
     }
 }
 
-void migrateConfig(const QSettings &oldSettings, Settings &newSettings)
-{
-    foreach ( const QString &key, oldSettings.allKeys() )
-        newSettings.setValue(key, oldSettings.value(key));
-}
-
 void migrateConfigToAppDir()
 {
-    const QString path = QCoreApplication::applicationDirPath() + "/config";
-    QDir dir(path);
+    // Don't use Windows registry.
+    QSettings::setDefaultFormat(QSettings::IniFormat);
 
-    if ( dir.mkpath("copyq") && dir.isReadable() && QFileInfo(path).isWritable() ) {
-        QSettings oldSettings;
+    bool isPortable;
+    const QDir dir = configFolder(&isPortable);
+
+    if (isPortable) {
         const QString oldConfigFileName =
                 QSettings(QSettings::IniFormat, QSettings::UserScope,
                           QCoreApplication::organizationName(),
                           QCoreApplication::applicationName()).fileName();
         const QString oldConfigPath = QDir::cleanPath(oldConfigFileName + "/..");
 
-        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, path);
-        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir.absolutePath());
         Settings newSettings;
 
         if ( Settings::canModifySettings() && newSettings.isEmpty() ) {
@@ -97,24 +118,10 @@ void migrateConfigToAppDir()
 
             // Migrate themes from system directory.
             migrateDirectory(oldConfigPath + "/themes", newConfigPath + "/themes");
-
-            // Migrate rest of the configuration from the system registry.
-            migrateConfig(oldSettings, newSettings);
         }
-    } else {
-        COPYQ_LOG( QString("Cannot use \"%1\" directory to save user configuration and items.")
-                   .arg(path) );
-
-        QSettings oldSettings;
-
-        QSettings::setDefaultFormat(QSettings::IniFormat);
-        Settings newSettings;
-
-        // Move settings from Windows registry.
-        if (newSettings.isEmpty()) {
-            COPYQ_LOG("Moving configuration from Windows registry.");
-            migrateConfig(oldSettings, newSettings);
-        }
+    } else if ( dir.exists() ) {
+        log( QString("Ignoring configuration in \"%1\" (https://github.com/hluk/CopyQ/issues/583).")
+             .arg(dir.absolutePath()), LogWarning );
     }
 }
 
@@ -160,10 +167,91 @@ void installControlHandler()
 template <typename Application>
 Application *createApplication(int &argc, char **argv)
 {
-    Application *app = new Application(argc, argv);
+    Application *app = new ApplicationExceptionHandler<Application>(argc, argv);
     installControlHandler();
-    setBinaryStdin();
+    setBinaryFor(0);
+    setBinaryFor(1);
+
+    // Override log file for portable version.
+    bool isPortable;
+    const QDir dir = configFolder(&isPortable);
+    if (isPortable) {
+        const QString logFileName = dir.absolutePath() + "/copyq.log";
+        qputenv("COPYQ_LOG_FILE", logFileName.toUtf8());
+    }
+
     return app;
+}
+
+QApplication *createGuiApplication(int &argc, char **argv)
+{
+    auto app = createApplication<QApplication>(argc, argv);
+
+    // WORKAROUND: Create a window so that application can receive
+    //             WM_QUERYENDSESSION (from installer) and similar events.
+    auto w = new QWidget();
+    auto winId = w->winId();
+    Q_UNUSED(winId);
+
+    return app;
+}
+
+QString windowClass(HWND window)
+{
+    WCHAR buf[32];
+    GetClassNameW(window, buf, 32);
+    return QString::fromUtf16(reinterpret_cast<ushort *>(buf));
+}
+
+HWND getLastVisibleActivePopUpOfWindow(HWND window)
+{
+    HWND currentWindow = window;
+
+    for (int i = 0; i < 50; ++i) {
+        HWND lastPopUp = GetLastActivePopup(currentWindow);
+
+        if (IsWindowVisible(lastPopUp))
+            return lastPopUp;
+
+        if (lastPopUp == currentWindow)
+            return nullptr;
+
+        currentWindow = lastPopUp;
+    }
+
+    return nullptr;
+}
+
+bool isAltTabWindow(HWND window)
+{
+    if (!window || window == GetShellWindow())
+        return false;
+
+    HWND root = GetAncestor(window, GA_ROOTOWNER);
+
+    if (getLastVisibleActivePopUpOfWindow(root) != window)
+        return false;
+
+    const QString cls = windowClass(window);
+	COPYQ_LOG( QString("cls: \"%1\"").arg(cls) );
+    return !cls.isEmpty()
+            && cls != "Shell_TrayWnd"
+            && cls != "Shell_SecondaryTrayWnd"
+            && cls != "DV2ControlHost"
+            && cls != "MsgrIMEWindowClass"
+            && cls != "SysShadow"
+            && cls != "Button"
+            && !cls.startsWith("WMP9MediaBarFlyout");
+}
+
+HWND currentWindow;
+BOOL CALLBACK getCurrentWindowProc(HWND window, LPARAM)
+{
+    if (!isAltTabWindow(window))
+        return TRUE;
+
+    currentWindow = window;
+    return FALSE;
 }
 
 } // namespace
@@ -176,23 +264,30 @@ PlatformPtr createPlatformNativeInterface()
 PlatformWindowPtr WinPlatform::getWindow(WId winId)
 {
     HWND window = reinterpret_cast<HWND>(winId);
-    return PlatformWindowPtr( window ? new WinPlatformWindow(window) : NULL );
+    return PlatformWindowPtr( window ? new WinPlatformWindow(window) : nullptr );
 }
 
 PlatformWindowPtr WinPlatform::getCurrentWindow()
 {
-    HWND window = GetForegroundWindow();
-    return PlatformWindowPtr( window ? new WinPlatformWindow(window) : NULL );
+    currentWindow = GetForegroundWindow();
+    if (!isAltTabWindow(currentWindow))
+        EnumWindows(getCurrentWindowProc, 0);
+    return PlatformWindowPtr( currentWindow ? new WinPlatformWindow(currentWindow) : nullptr );
+}
+
+QCoreApplication *WinPlatform::createConsoleApplication(int &argc, char **argv)
+{
+    return createApplication<QCoreApplication>(argc, argv);
 }
 
 QApplication *WinPlatform::createServerApplication(int &argc, char **argv)
 {
-    return createApplication<QApplication>(argc, argv);
+    return createGuiApplication(argc, argv);
 }
 
 QApplication *WinPlatform::createMonitorApplication(int &argc, char **argv)
 {
-    return createApplication<QApplication>(argc, argv);
+    return createGuiApplication(argc, argv);
 }
 
 QCoreApplication *WinPlatform::createClientApplication(int &argc, char **argv)
@@ -212,7 +307,7 @@ PlatformClipboardPtr WinPlatform::clipboard()
 
 int WinPlatform::keyCode(const QKeyEvent &event)
 {
-    const int key = PlatformNativeInterface::keyCode(event);
+    const int key = event.key();
 
     // Some keys shouldn't be translated.
     if ( key == Qt::Key_Return
@@ -245,4 +340,25 @@ QStringList WinPlatform::getCommandLineArguments(int, char**)
         result.append( QString::fromUtf16(reinterpret_cast<ushort*>(arguments[i])) );
 
     return result;
+}
+
+bool WinPlatform::findPluginDir(QDir *pluginsDir)
+{
+    pluginsDir->setPath( qApp->applicationDirPath() );
+    return pluginsDir->cd("plugins");
+}
+
+QString WinPlatform::defaultEditorCommand()
+{
+    return "notepad %1";
+}
+
+QString WinPlatform::translationPrefix()
+{
+    return QCoreApplication::applicationDirPath() + "/translations";
+}
+
+QString WinPlatform::themePrefix()
+{
+    return QApplication::applicationDirPath() + "/themes";
 }

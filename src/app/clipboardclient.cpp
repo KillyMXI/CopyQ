@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,11 +23,50 @@
 #include "common/commandstatus.h"
 #include "common/log.h"
 #include "platform/platformnativeinterface.h"
-#include "platform/platformwindow.h"
 
 #include <QCoreApplication>
 #include <QFile>
 #include <QThread>
+
+namespace {
+
+QString messageCodeToString(int code)
+{
+    switch (code) {
+    case CommandFinished:
+        return "CommandFinished";
+    case CommandError:
+        return "CommandError";
+    case CommandBadSyntax:
+        return "CommandBadSyntax";
+    case CommandException:
+        return "CommandException";
+    case CommandPrint:
+        return "CommandPrint";
+    case CommandReadInput:
+        return "CommandReadInput";
+    default:
+        return QString("Unknown(%1)").arg(code);
+    }
+}
+
+void printClientStdout(const QByteArray &output)
+{
+    QFile f;
+    f.open(stdout, QIODevice::WriteOnly);
+    f.write(output);
+}
+
+void printClientStderr(const QByteArray &output)
+{
+    QFile f;
+    f.open(stderr, QIODevice::WriteOnly);
+    f.write(output);
+    if ( !output.endsWith('\n') )
+        f.write("\n");
+}
+
+} // namespace
 
 void InputReader::readInput()
 {
@@ -40,38 +79,41 @@ void InputReader::readInput()
 
 ClipboardClient::ClipboardClient(int &argc, char **argv, int skipArgc, const QString &sessionName)
     : Client()
-    , App(createPlatformNativeInterface()->createClientApplication(argc, argv), sessionName)
-    , m_inputReaderThread(NULL)
+    , App("Client", createPlatformNativeInterface()->createClientApplication(argc, argv), sessionName)
+    , m_inputReaderThread(nullptr)
 {
     restoreSettings();
 
-    if ( !startClientSocket(clipboardServerName(), argc, argv, skipArgc) ) {
-        log( tr("Cannot connect to server! Start CopyQ server first."), LogError );
-        exit(1);
-    }
+    startClientSocket(clipboardServerName(), argc, argv, skipArgc, CommandArguments);
 }
 
 void ClipboardClient::onMessageReceived(const QByteArray &data, int messageCode)
 {
-    if (messageCode == CommandActivateWindow) {
-        COPYQ_LOG("Activating window.");
-        PlatformWindowPtr window = createPlatformNativeInterface()->deserialize(data);
-        if (window)
-            window->raise();
-    } else if (messageCode == CommandReadInput) {
-        COPYQ_LOG("Sending standard input.");
-        startInputReader();
-    } else {
-        QFile f;
-        f.open((messageCode == CommandSuccess || messageCode == CommandFinished) ? stdout : stderr, QIODevice::WriteOnly);
-        f.write(data);
-    }
+    COPYQ_LOG( "Message received: " + messageCodeToString(messageCode) );
 
-    COPYQ_LOG( QString("Message received with exit code %1.").arg(messageCode) );
+    switch (messageCode) {
+    case CommandFinished:
+        printClientStdout(data);
+        exit(0);
+        break;
 
-    if (messageCode == CommandFinished || messageCode == CommandBadSyntax || messageCode == CommandError) {
-        abortInputReader();
+    case CommandError:
+    case CommandBadSyntax:
+    case CommandException:
+        printClientStderr(data);
         exit(messageCode);
+        break;
+
+    case CommandPrint:
+        printClientStdout(data);
+        break;
+
+    case CommandReadInput:
+        startInputReader();
+        break;
+
+    default:
+        break;
     }
 }
 
@@ -87,6 +129,12 @@ void ClipboardClient::onDisconnected()
     exit(1);
 }
 
+void ClipboardClient::onConnectionFailed()
+{
+    log( tr("Cannot connect to server! Start CopyQ server first."), LogError );
+    exit(1);
+}
+
 void ClipboardClient::setInput(const QByteArray &input)
 {
     m_input = input;
@@ -97,7 +145,13 @@ void ClipboardClient::setInput(const QByteArray &input)
 void ClipboardClient::sendInput()
 {
     if ( !wasClosed() )
-        sendMessage(m_input, 0);
+        sendMessage(m_input, CommandReadInputReply);
+}
+
+void ClipboardClient::exit(int exitCode)
+{
+    abortInputReader();
+    App::exit(exitCode);
 }
 
 void ClipboardClient::startInputReader()
@@ -110,7 +164,7 @@ void ClipboardClient::startInputReader()
         return;
     }
 
-    InputReader *reader = new InputReader;
+    auto reader = new InputReader;
     m_inputReaderThread = new QThread(this);
     reader->moveToThread(m_inputReaderThread);
     connect( m_inputReaderThread, SIGNAL(started()), reader, SLOT(readInput()) );

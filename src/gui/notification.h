@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,6 +20,8 @@
 #ifndef NOTIFICATION_H
 #define NOTIFICATION_H
 
+#include "gui/notificationbutton.h"
+
 #include <QTimer>
 #include <QWidget>
 
@@ -31,46 +33,46 @@ class Notification : public QWidget
     Q_OBJECT
     friend class NotificationDaemon;
 protected:
-    explicit Notification(int id);
+    Notification(const QString &id, const QString &title, const NotificationButtons &buttons);
 
-    void setTitle(const QString &title);
-    void setMessage(const QString &msg, Qt::TextFormat format = Qt::PlainText);
+    void setMessage(const QString &msg, Qt::TextFormat format = Qt::AutoText);
     void setPixmap(const QPixmap &pixmap);
-    void setIcon(ushort icon);
+    void setIcon(const QString &icon);
     void setInterval(int msec);
     void setOpacity(qreal opacity);
-    void setClickToShowEnabled(bool enabled);
 
     void updateIcon();
 
-    int id() const { return m_id; }
+    const QString &id() const { return m_id; }
 
     void adjust();
 
-    void mousePressEvent(QMouseEvent *event);
-    void enterEvent(QEvent *event);
-    void leaveEvent(QEvent *event);
-    void paintEvent(QPaintEvent *event);
-    void showEvent(QShowEvent *event);
-    void hideEvent(QHideEvent *event);
+    void mousePressEvent(QMouseEvent *event) override;
+    void enterEvent(QEvent *event) override;
+    void leaveEvent(QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
 signals:
     /** Emitted if notification needs to be closed. */
     void closeNotification(Notification *self);
 
+    void buttonClicked(const NotificationButton &button);
+
 private slots:
     void onTimeout();
+    void onButtonClicked(const NotificationButton &button);
 
 private:
-    const int m_id;
+    QString m_id;
     QWidget *m_body;
     QLabel *m_titleLabel;
     QLabel *m_iconLabel;
     QLabel *m_msgLabel;
-    QLabel *m_tipLabel;
     QTimer m_timer;
     qreal m_opacity;
-    ushort m_icon;
+    QString m_icon;
 };
 
 #endif // NOTIFICATION_H

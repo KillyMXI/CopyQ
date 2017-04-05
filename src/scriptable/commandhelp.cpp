@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,6 +19,7 @@
 
 #include "commandhelp.h"
 
+#include "common/common.h"
 #include "scriptable/scriptable.h"
 
 CommandHelp::CommandHelp()
@@ -57,7 +58,7 @@ QString CommandHelp::toString() const
 
 QList<CommandHelp> commandHelp()
 {
-    static QList<CommandHelp> help = QList<CommandHelp>()
+    return QList<CommandHelp>()
             << CommandHelp("show",
                            Scriptable::tr("Show main window and optionally open tab with given name."))
                .addArg("[" + Scriptable::tr("NAME") + "]")
@@ -75,7 +76,7 @@ QList<CommandHelp> commandHelp()
             << CommandHelp("clipboard",
                            Scriptable::tr("Print clipboard content."))
                .addArg("[" + Scriptable::tr("MIME") + "]")
-           #ifdef COPYQ_WS_X11
+           #ifdef HAS_MOUSE_SELECTIONS
             << CommandHelp("selection",
                            Scriptable::tr("Print X11 selection content."))
                .addArg("[" + Scriptable::tr("MIME") + "]")
@@ -175,7 +176,7 @@ QList<CommandHelp> commandHelp()
             << CommandHelp()
             << CommandHelp("eval, -e",
                            Scriptable::tr("\nEvaluate ECMAScript program.\n"
-                                          "Arguments are accessible using with \"arguments(0..N)\"."))
+                                          "Arguments are accessible using with \"arguments[0..N]\"."))
                .addArg("[" + Scriptable::tr("SCRIPT") + "]")
                .addArg("[" + Scriptable::tr("ARGUMENTS") + "]...")
             << CommandHelp("session, -s, --session",
@@ -191,6 +192,4 @@ QList<CommandHelp> commandHelp()
                            Scriptable::tr("Run application tests (append --help argument for more info)."))
 #endif
                ;
-
-    return help;
 }

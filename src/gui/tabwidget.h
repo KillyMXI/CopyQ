@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,25 +20,25 @@
 #ifndef TABWIDGET_H
 #define TABWIDGET_H
 
-#include <QBoxLayout>
 #include <QMap>
+#include <QTabBar>
 #include <QWidget>
 
-class QAbstractScrollArea;
+#include <memory>
+
 class QMainWindow;
 class QMimeData;
 class QPoint;
 class QStackedWidget;
 class QToolBar;
-class TabBar;
-class TabTree;
+class TabsWidgetInterface;
 
 class TabWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit TabWidget(QWidget *parent = NULL);
+    explicit TabWidget(QWidget *parent = nullptr);
 
     /** Return path to current group in tree (empty string if tree mode is disabled). */
     QString getCurrentTabPath() const;
@@ -46,15 +46,15 @@ public:
     /** Return true only if tree mode is enabled and tab is tab group. */
     bool isTabGroup(const QString &tab) const;
 
-    /** Return true only if tree mode is enabled. */
-    bool isTreeModeEnabled() const;
+    /** Return true only if tab froup is selected in tree mode. */
+    bool isTabGroupSelected() const;
 
-    /** Return current tab (-1 if current is group in tree). */
+    /** Return current tab. */
     int currentIndex() const;
 
-    QWidget *widget(int tabIndex);
+    QWidget *widget(int tabIndex) const;
 
-    QWidget *currentWidget() { return widget( currentIndex() ); }
+    QWidget *currentWidget() const { return widget( currentIndex() ); }
 
     /** Return number of tabs. */
     int count() const;
@@ -87,7 +87,7 @@ public:
 
     void updateTabs();
 
-    QAbstractScrollArea *tabTree();
+    QToolBar *toolBar() const { return m_toolBarCurrent; }
 
 public slots:
     void setCurrentIndex(int tabIndex);
@@ -107,29 +107,29 @@ signals:
     void tabRenamed(const QString &newName, int index);
     void currentChanged(int tabIndex, int oldTabIndex);
     void tabCloseRequested(int);
-    void dropItems(const QString &tabName, QDropEvent *event);
+    void dropItems(const QString &tabName, const QMimeData *data);
 
 protected:
-    bool eventFilter(QObject *object, QEvent *event);
+    bool eventFilter(QObject *object, QEvent *event) override;
 
 private slots:
-    void onTreeItemSelected(bool isGroup);
     void onTabMoved(int from, int to);
     void onTabsMoved(const QString &oldPrefix, const QString &newPrefix, const QList<int> &indexes);
     void onToolBarOrientationChanged(Qt::Orientation orientation);
+    void onTreeItemClicked();
 
 private:
     void createTabBar();
     void createTabTree();
     void updateToolBar();
     void updateTabItemCount(const QString &name);
-    void updateSize();
     QString itemCountLabel(const QString &name);
 
     QToolBar *m_toolBar;
     QToolBar *m_toolBarTree;
-    TabBar *m_tabBar;
-    TabTree *m_tabTree;
+    QToolBar *m_toolBarCurrent;
+    TabsWidgetInterface *m_tabs = nullptr;
+    QTabBar *m_tabBar = nullptr;
     QStackedWidget *m_stackedWidget;
     bool m_hideTabBar;
 

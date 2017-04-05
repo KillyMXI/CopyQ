@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -57,7 +57,7 @@ struct Command {
         , outputTab()
         {}
 
-    bool operator==(Command &other) const {
+    bool operator==(const Command &other) const {
         return name == other.name
             && re == other.re
             && wndre == other.wndre
@@ -80,7 +80,7 @@ struct Command {
             && outputTab == other.outputTab;
     }
 
-    bool operator!=(Command &other) const {
+    bool operator!=(const Command &other) const {
         return !(*this == other);
     }
 

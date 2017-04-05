@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,8 +19,20 @@
 
 #include "appconfig.h"
 
+#include "platform/platformnativeinterface.h"
+
 #include <QObject>
 #include <QString>
+
+Config::Config<QString>::Value Config::editor::defaultValue()
+{
+    return createPlatformNativeInterface()->defaultEditorCommand();
+}
+
+Config::Config<bool>::Value Config::autostart::defaultValue()
+{
+    return createPlatformNativeInterface()->isAutostartEnabled();
+}
 
 QString defaultClipboardTabName()
 {
@@ -36,7 +48,7 @@ QVariant AppConfig::option(const QString &name) const
 AppConfig::AppConfig(AppConfig::Category category)
 {
     m_settings.beginGroup(
-                category == OptionsCategory ? "Options" : "Themes");
+                category == OptionsCategory ? "Options" : "Theme");
 }
 
 void AppConfig::setOption(const QString &name, const QVariant &value)

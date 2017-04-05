@@ -55,17 +55,17 @@ public:
     ByteArrayClassPropertyIterator(const QScriptValue &object);
     ~ByteArrayClassPropertyIterator();
 
-    bool hasNext() const;
-    void next();
+    bool hasNext() const override;
+    void next() override;
 
-    bool hasPrevious() const;
-    void previous();
+    bool hasPrevious() const override;
+    void previous() override;
 
-    void toFront();
-    void toBack();
+    void toFront() override;
+    void toBack() override;
 
-    QScriptString name() const;
-    uint id() const;
+    QScriptString name() const override;
+    uint id() const override;
 
 private:
     int m_index;
@@ -106,16 +106,16 @@ QScriptClass::QueryFlags ByteArrayClass::queryProperty(const QScriptValue &objec
 {
     QByteArray *ba = qscriptvalue_cast<QByteArray*>(object.data());
     if (!ba)
-        return 0;
+        return nullptr;
     if (name == length) {
         return flags;
     } else {
         bool isArrayIndex;
-        qint32 pos = name.toArrayIndex(&isArrayIndex);
+        const auto pos = name.toArrayIndex(&isArrayIndex);
         if (!isArrayIndex)
-            return 0;
+            return nullptr;
         *id = pos;
-        if ((flags & HandlesReadAccess) && (pos >= ba->size()))
+        if ( (flags & HandlesReadAccess) && (pos >= static_cast<uint>(ba->size())) )
             flags &= ~HandlesReadAccess;
         return flags;
     }
@@ -133,7 +133,7 @@ QScriptValue ByteArrayClass::property(const QScriptValue &object,
     if (name == length)
         return ba->length();
 
-    qint32 pos = id;
+    auto pos = static_cast<qint32>(id);
     if ((pos < 0) || (pos >= ba->size()))
         return QScriptValue();
     return uint(ba->at(pos)) & 255;
@@ -152,7 +152,7 @@ void ByteArrayClass::setProperty(QScriptValue &object,
     if (name == length) {
         resize(*ba, value.toInt32());
     } else {
-        qint32 pos = id;
+        auto pos = static_cast<qint32>(id);
         if (pos < 0)
             return;
         if (ba->size() <= pos)
@@ -212,15 +212,28 @@ QScriptValue ByteArrayClass::newInstance(const QByteArray &ba)
 }
 //! [1]
 
+QScriptValue ByteArrayClass::newInstance(const QString &text)
+{
+    const auto ba = text.toUtf8();
+    engine()->reportAdditionalMemoryCost(ba.size());
+    return newInstance(ba);
+}
+
 //! [2]
 QScriptValue ByteArrayClass::construct(QScriptContext *ctx, QScriptEngine *)
 {
     ByteArrayClass *cls = qscriptvalue_cast<ByteArrayClass*>(ctx->callee().data());
     if (!cls)
         return QScriptValue();
+
     QScriptValue arg = ctx->argument(0);
+
     if (arg.instanceOf(ctx->callee()))
         return cls->newInstance(qscriptvalue_cast<QByteArray>(arg));
+
+    if (arg.isString())
+        return cls->newInstance(arg.toString());
+
     int size = arg.toInt32();
     return cls->newInstance(size);
 }
@@ -320,6 +333,6 @@ QScriptString ByteArrayClassPropertyIterator::name() const
 
 uint ByteArrayClassPropertyIterator::id() const
 {
-    return m_last;
+    return static_cast<uint>(m_last);
 }
 //! [8]

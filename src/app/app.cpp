@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,9 +19,9 @@
 
 #include "app.h"
 
-#include "common/common.h"
 #include "common/log.h"
 #include "common/settings.h"
+#include "common/textdata.h"
 #include "platform/platformnativeinterface.h"
 #ifdef Q_OS_UNIX
 #   include "platform/unix/unixsignalhandler.h"
@@ -34,15 +34,7 @@
 #include <QTranslator>
 #include <QVariant>
 
-#ifndef COPYQ_TRANSLATION_PREFIX
-#   ifdef Q_OS_WIN
-#       define COPYQ_TRANSLATION_PREFIX QCoreApplication::applicationDirPath() + "/translations"
-#   elif defined(Q_OS_MAC)
-#       define COPYQ_TRANSLATION_PREFIX QCoreApplication::applicationDirPath() + "/../Resources/translations"
-#   else
-#       define COPYQ_TRANSLATION_PREFIX ""
-#   endif
-#endif
+#include <memory>
 
 namespace {
 
@@ -73,59 +65,13 @@ void initTests()
     const QString testId = getTextData( qgetenv("COPYQ_TEST_ID") );
     qApp->setProperty("CopyQ_test_id", testId);
 }
-
-/**
- * Read base64-encoded settings from "COPYQ_TEST_SETTINGS" enviroment variable if not empty.
- *
- * The settings are initially taken from "CopyQ_test_settings" property of test object returned by
- * ItemLoaderInterface::tests().
- *
- * This function does nothing if isTesting() returns false.
- */
-void initTestsSettings()
-{
-    if ( !isTesting() )
-        return;
-
-    const QByteArray settingsData = qgetenv("COPYQ_TEST_SETTINGS");
-    if ( settingsData.isEmpty() )
-        return;
-
-    // Reset settings on first run of each test case.
-    Settings settings;
-    settings.clear();
-
-    QVariant testSettings;
-    const QByteArray data = QByteArray::fromBase64(settingsData);
-    QDataStream input(data);
-    input >> testSettings;
-    const QVariantMap testSettingsMap = testSettings.toMap();
-
-    const QString testId = qApp->property("CopyQ_test_id").toString();
-    bool pluginsTest = testId != "CORE";
-
-    if (pluginsTest) {
-        settings.beginGroup("Plugins");
-        settings.beginGroup(testId);
-    }
-
-    foreach (const QString &key, testSettingsMap.keys())
-        settings.setValue(key, testSettingsMap[key]);
-
-    if (pluginsTest) {
-        settings.endGroup();
-        settings.endGroup();
-    }
-
-    settings.setValue("CopyQ_test_id", testId);
-}
 #endif // HAS_TESTS
 
 void installTranslator(const QString &filename, const QString &directory)
 {
-    QScopedPointer<QTranslator> translator( new QTranslator(qApp) );
+    std::unique_ptr<QTranslator> translator( new QTranslator(qApp) );
     if ( translator->load(filename, directory) )
-        QCoreApplication::installTranslator(translator.take());
+        QCoreApplication::installTranslator(translator.release());
 }
 
 void installTranslator()
@@ -140,21 +86,21 @@ void installTranslator()
     if (locale.isEmpty())
         locale = QLocale::system().name();
 
-    QStringList translationDirectories;
 #ifdef COPYQ_TRANSLATION_PREFIX
-    translationDirectories.prepend(COPYQ_TRANSLATION_PREFIX);
+    const QString translationPrefix = COPYQ_TRANSLATION_PREFIX;
+#else
+    const QString translationPrefix = createPlatformNativeInterface()->translationPrefix();
 #endif
 
+    QStringList translationDirectories;
+    translationDirectories.prepend(translationPrefix);
+
     // 1. Qt translations
-#ifdef COPYQ_TRANSLATION_PREFIX
-    installTranslator("qt_" + locale, COPYQ_TRANSLATION_PREFIX);
-#endif
+    installTranslator("qt_" + locale, translationPrefix);
     installTranslator("qt_" + locale, QLibraryInfo::location(QLibraryInfo::TranslationsPath));
 
     // 2. installed translations
-#ifdef COPYQ_TRANSLATION_PREFIX
-    installTranslator("copyq_" + locale, COPYQ_TRANSLATION_PREFIX);
-#endif
+    installTranslator("copyq_" + locale, translationPrefix);
 
     // 3. custom translations
     const QByteArray customPath = qgetenv("COPYQ_TRANSLATION_PREFIX");
@@ -178,10 +124,13 @@ void installTranslator()
 
 } // namespace
 
-App::App(QCoreApplication *application,
+App::App(
+        const QString &threadName,
+        QCoreApplication *application,
         const QString &sessionName)
     : m_app(application)
     , m_exitCode(0)
+    , m_started(false)
     , m_closed(false)
 {
     QString session("copyq");
@@ -196,18 +145,23 @@ App::App(QCoreApplication *application,
     QCoreApplication::setOrganizationName(session);
     QCoreApplication::setApplicationName(session);
 
+    if ( !threadName.isEmpty() )
+        setCurrentThreadName(threadName);
+
 #ifdef HAS_TESTS
     initTests();
 #endif
 
 #ifdef Q_OS_UNIX
-    if ( !UnixSignalHandler::create(m_app.data()) )
+    if ( !UnixSignalHandler::create(m_app) )
         log( QString("Failed to create handler for Unix signals!"), LogError );
 #endif
 }
 
 App::~App()
 {
+    QCoreApplication::processEvents();
+    App::exit();
 }
 
 void App::restoreSettings(bool canModifySettings)
@@ -219,10 +173,6 @@ void App::restoreSettings(bool canModifySettings)
     Settings::restore();
 
     installTranslator();
-
-#ifdef HAS_TESTS
-    initTestsSettings();
-#endif
 }
 
 int App::exec()
@@ -232,6 +182,8 @@ int App::exec()
         return m_exitCode;
     }
 
+    m_started = true;
+
     return m_app->exec();
 }
 
@@ -239,6 +191,9 @@ void App::exit(int exitCode)
 {
     if ( wasClosed() )
         return;
+
+    if (!m_started)
+        ::exit(exitCode);
 
     QCoreApplication::exit(exitCode);
     m_exitCode = exitCode;

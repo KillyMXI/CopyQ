@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,27 +20,53 @@
 #ifndef TABTREE_H
 #define TABTREE_H
 
+#include "gui/tabswidgetinterface.h"
+
+#include <QList>
 #include <QString>
+#include <QTimer>
 #include <QTreeWidget>
 
 class QMimeData;
+class QTreeWidgetItem;
 
-class TabTree : public QTreeWidget
+class TabTree : public QTreeWidget, public TabsWidgetInterface
 {
     Q_OBJECT
 public:
-    explicit TabTree(QWidget *parent = NULL);
+    explicit TabTree(QWidget *parent = nullptr);
 
-    /** Create tab in @a path with given @a index. */
-    void insertTab(const QString &path, int index, bool selected);
+    QString getCurrentTabPath() const override;
 
-    /** Remove tab with given @a index. */
-    void removeTab(int index);
+    bool isTabGroup(const QString &tab) const override;
 
-    /** Return item with given @a index or NULL if it doesn't exist. */
+    QString tabText(int tabIndex) const override;
+    void setTabText(int tabIndex, const QString &tabText) override;
+
+    void setTabItemCount(const QString &tabName, const QString &itemCount) override;
+
+    void updateTabIcon(const QString &tabName) override;
+
+    void insertTab(int index, const QString &path) override;
+    void removeTab(int index) override;
+    void moveTab(int from, int to) override;
+
+    void updateCollapsedTabs(QStringList *collapsedTabs) const override;
+    void setCollapsedTabs(const QStringList &collapsedTabs) override;
+
+    void updateTabIcons() override;
+
+    void nextTab() override;
+    void previousTab() override;
+
+    void setCurrentTab(int index) override;
+
+    void adjustSize() override;
+
+    /** Return item with given @a index or nullptr if it doesn't exist. */
     QTreeWidgetItem *findTreeItem(int index) const;
 
-    /** Return item with given @a path or NULL if it doesn't exist. */
+    /** Return item with given @a path or nullptr if it doesn't exist. */
     QTreeWidgetItem *findTreeItem(const QString &path) const;
 
     /** Get tab index for @a item (-1 if it's a group). */
@@ -55,52 +81,36 @@ public:
     /** Return true only if tab is tab group and is empty. */
     bool isEmptyTabGroup(const QTreeWidgetItem *item) const;
 
-    /** Change tab index of tab. */
-    void moveTab(int from, int to);
-
-    void setTabText(int tabIndex, const QString &tabText);
-
-    void setTabItemCount(const QString &tabName, const QString &itemCount);
-
-    void setCollapsedTabs(const QStringList &collapsedPaths);
-
-    QStringList collapsedTabs() const;
-
-    QSize sizeHint() const;
-
-    void updateTabIcon(const QString &tabName);
-
-    void updateTabIcons();
+    QSize sizeHint() const override;
 
 public slots:
-    void setCurrentTabIndex(int index);
-    void nextTreeItem();
-    void previousTreeItem();
-
     void onCurrentItemChanged(QTreeWidgetItem *current, QTreeWidgetItem *previous);
 
 signals:
     void currentTabChanged(int index);
     void tabMenuRequested(const QPoint &pos, const QString &groupPath);
     void tabsMoved(const QString &oldPrefix, const QString &newPrefix, const QList<int> &indexes);
-    void dropItems(const QString &tabName, QDropEvent *event);
+    void dropItems(const QString &tabName, const QMimeData *data);
 
 protected:
-    void contextMenuEvent(QContextMenuEvent *event);
-    void dragEnterEvent(QDragEnterEvent *event);
-    void dragMoveEvent(QDragMoveEvent *event);
-    void dropEvent(QDropEvent *event);
-    bool eventFilter(QObject *obj, QEvent *event);
-    void rowsInserted(const QModelIndex &parent, int start, int end);
-    void showEvent(QShowEvent *event);
+    void contextMenuEvent(QContextMenuEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+    bool eventFilter(QObject *obj, QEvent *event) override;
+    void rowsInserted(const QModelIndex &parent, int start, int end) override;
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void updateSize();
+    void doUpdateSize();
 
 private:
     void requestTabMenu(const QPoint &itemPosition, const QPoint &menuPosition);
-    void shiftIndexesBetween(int from, int to = -1, int how = -1);
     void deleteItem(QTreeWidgetItem *item);
+
+    QTimer m_timerUpdate;
+    QList<QTreeWidgetItem*> m_tabs;
 };
 
 #endif // TABTREE_H

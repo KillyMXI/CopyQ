@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,6 +21,7 @@
 #include "ui_commandedit.h"
 
 #include "gui/commandsyntaxhighlighter.h"
+#include "gui/commandcompleter.h"
 
 #include <QScriptEngine>
 #include <QTextBlock>
@@ -38,6 +39,8 @@ CommandEdit::CommandEdit(QWidget *parent)
     setFocusProxy(ui->plainTextEditCommand);
 
     installCommandSyntaxHighlighter(ui->plainTextEditCommand);
+
+    new CommandCompleter(ui->plainTextEditCommand);
 }
 
 CommandEdit::~CommandEdit()
@@ -126,7 +129,8 @@ void CommandEdit::on_plainTextEditCommand_textChanged()
 void CommandEdit::updateCommandEditSize()
 {
     const QFontMetrics fm( ui->plainTextEditCommand->document()->defaultFont() );
-    const int lines = ui->plainTextEditCommand->document()->size().height() + 2;
+    const auto height = static_cast<int>( ui->plainTextEditCommand->document()->size().height() );
+    const int lines = height + 2;
     const int visibleLines = qBound(3, lines, 20);
     const int h = visibleLines * fm.lineSpacing();
     ui->plainTextEditCommand->setMinimumHeight(h);

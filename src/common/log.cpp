@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,10 +23,11 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
-#include <QSharedPointer>
 #include <QString>
 #include <QSystemSemaphore>
+#include <QThread>
 #include <QtGlobal>
+#include <QVariant>
 
 #if QT_VERSION < 0x050000
 #   include <QDesktopServices>
@@ -34,38 +35,15 @@
 #   include <QStandardPaths>
 #endif
 
-namespace {
+#include <cstring>
+#include <cmath>
+#include <memory>
 
-const int logFileSize = 128 * 1024;
-const int logFileCount = 4;
-
-int getLogLevel()
-{
-    const QByteArray logLevelString = qgetenv("COPYQ_LOG_LEVEL").toUpper();
-
-    if ( logLevelString.startsWith("TRAC") )
-        return LogTrace;
-    if ( logLevelString.startsWith("DEBUG") )
-        return LogDebug;
-    if ( logLevelString.startsWith("NOT") )
-        return LogNote;
-    if ( logLevelString.startsWith("WARN") )
-        return LogWarning;
-    if ( logLevelString.startsWith("ERR") )
-        return LogError;
-
-#ifdef COPYQ_DEBUG
-    return LogDebug;
+#ifdef Q_OS_MAC
+#   define THREAD_LOCAL __thread
 #else
-    return LogNote;
+#   define THREAD_LOCAL thread_local
 #endif
-}
-
-QString envString(const char *varName)
-{
-    const QByteArray bytes = qgetenv(varName);
-    return QString::fromUtf8( bytes.constData(), bytes.size() );
-}
 
 /// System-wide mutex
 class SystemMutex {
@@ -102,16 +80,57 @@ private:
     QSystemSemaphore m_semaphore;
 };
 
-typedef QSharedPointer<SystemMutex> SystemMutexPtr;
-SystemMutexPtr sessionMutex;
+class SystemMutex;
+using SystemMutexPtr = std::shared_ptr<SystemMutex>;
+Q_DECLARE_METATYPE(SystemMutexPtr)
+
+namespace {
+
+// Avoid heap allocation for thread local variable.
+constexpr int maxThreadLabelSize = 15;
+THREAD_LOCAL char currentThreadLabel[maxThreadLabelSize + 1] = "";
+
+
+const int logFileSize = 512 * 1024;
+const int logFileCount = 10;
+
+const char propertySessionMutex[] = "CopyQ_Session_Mutex";
+
+int getLogLevel()
+{
+    const QByteArray logLevelString = qgetenv("COPYQ_LOG_LEVEL").toUpper();
+
+    if ( logLevelString.startsWith("TRAC") )
+        return LogTrace;
+    if ( logLevelString.startsWith("DEBUG") )
+        return LogDebug;
+    if ( logLevelString.startsWith("NOT") )
+        return LogNote;
+    if ( logLevelString.startsWith("WARN") )
+        return LogWarning;
+    if ( logLevelString.startsWith("ERR") )
+        return LogError;
+
+#ifdef COPYQ_DEBUG
+    return LogDebug;
+#else
+    return LogNote;
+#endif
+}
+
+QString envString(const char *varName)
+{
+    const QByteArray bytes = qgetenv(varName);
+    return QString::fromUtf8( bytes.constData(), bytes.size() );
+}
 
 /// Lock guard for SystemMutex.
 class SystemMutexLocker {
 public:
     /// Locks mutex (it's possible that the mutex won't be locked because of errors).
-    SystemMutexLocker(const SystemMutexPtr &mutex)
+    explicit SystemMutexLocker(const SystemMutexPtr &mutex)
         : m_mutex(mutex)
-        , m_locked(!m_mutex.isNull() && m_mutex->lock())
+        , m_locked( m_mutex != nullptr && m_mutex->lock() )
     {
     }
 
@@ -129,10 +148,10 @@ private:
     bool m_locked;
 };
 
-void initSessionMutex(QSystemSemaphore::AccessMode accessMode)
+SystemMutexPtr initSessionMutexHelper(QSystemSemaphore::AccessMode accessMode)
 {
     const QString mutexName = QCoreApplication::applicationName() + "_mutex";
-    sessionMutex = SystemMutexPtr(new SystemMutex(mutexName, accessMode));
+    const auto sessionMutex = std::make_shared<SystemMutex>(mutexName, accessMode);
 
     const QString error = sessionMutex->error();
     const bool create = accessMode == QSystemSemaphore::Create;
@@ -140,54 +159,106 @@ void initSessionMutex(QSystemSemaphore::AccessMode accessMode)
         const QString action = create ? "create" : "open";
         log("Failed to " + action + " session mutex: " + error, LogError);
     } else {
-        COPYQ_LOG( QString(create ? "Created" : "Opened")
-                   + " session mutex: " + mutexName );
+        COPYQ_LOG_VERBOSE(
+                    QString("%1 session mutex: %2")
+                    .arg(create ? "Created" : "Opened")
+                    .arg(mutexName) );
     }
-}
 
-const SystemMutexPtr &getSessionMutex()
-{
-    if (sessionMutex.isNull())
-        initSessionMutex(QSystemSemaphore::Open);
+    if (qApp)
+        qApp->setProperty( propertySessionMutex, QVariant::fromValue(sessionMutex) );
 
     return sessionMutex;
 }
 
-QString logLevelLabel(const LogLevel level)
+SystemMutexPtr initSessionMutex(QSystemSemaphore::AccessMode accessMode)
 {
-    switch(level) {
-    case LogWarning:
-        return "Warning";
-    case LogError:
-        return "ERROR";
-    case LogDebug:
-        return "DEBUG";
-    case LogTrace:
-        return "TRACE";
-    default:
-        return "Note";
+    static bool initializing = false;
+    if (initializing)
+        return nullptr;
+
+    initializing = true;
+    const auto sessionMutex = initSessionMutexHelper(accessMode);
+    initializing = false;
+
+    return sessionMutex;
+}
+
+SystemMutexPtr getSessionMutex()
+{
+    if (qApp) {
+        const auto sessionMutex =
+                qApp->property(propertySessionMutex).value<SystemMutexPtr>();
+
+        if (sessionMutex)
+            return sessionMutex;
     }
+
+    return initSessionMutex(QSystemSemaphore::Open);
 }
 
 QString getDefaultLogFilePath()
 {
 #if QT_VERSION < 0x050000
     return QDesktopServices::storageLocation(QDesktopServices::DataLocation);
+#elif QT_VERSION < 0x050400
+    return QStandardPaths::writableLocation(QStandardPaths::DataLocation);
 #else
     return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
 #endif
 }
 
-QString readLogFile(const QString &fileName)
+QString readLogFile(const QString &fileName, int maxReadSize)
 {
     QFile f(fileName);
     if ( !f.open(QIODevice::ReadOnly) )
         return QString();
 
+    const auto seek = f.size() - maxReadSize;
+    if (seek > 0)
+        f.seek(seek);
     const QByteArray content = f.readAll();
 
     return QString::fromUtf8(content);
 }
+
+QString logFileName(int i)
+{
+    if (i <= 0)
+        return ::logFileName();
+    return ::logFileName() + "." + QString::number(i);
+}
+
+void rotateLogFiles()
+{
+    for (int i = logFileCount - 1; i > 0; --i) {
+        const QString sourceFileName = logFileName(i - 1);
+        const QString targetFileName = logFileName(i);
+        QFile::remove(targetFileName);
+        QFile::rename(sourceFileName, targetFileName);
+    }
+}
+
+QByteArray createLogMessage(const QByteArray &label, const QByteArray &text)
+{
+    return label + QByteArray(text).replace("\n", "\n" + label + "   ") + "\n";
+}
+
+QByteArray createSimpleLogMessage(const QByteArray &text, const LogLevel level)
+{
+    const auto label = logLevelLabel(level) + ": ";
+    return createLogMessage(label, text);
+}
+
+QByteArray createLogMessage(const QByteArray &text, const LogLevel level)
+{
+    const auto timeStamp =
+            QDateTime::currentDateTime().toString(" [yyyy-MM-dd hh:mm:ss.zzz] ").toUtf8();
+    const auto label = "CopyQ " + logLevelLabel(level) + timeStamp + QByteArray(currentThreadLabel) + ": ";
+    return createLogMessage(label, text);
+}
+
+} // namespace
 
 QString logFileName()
 {
@@ -202,34 +273,17 @@ QString logFileName()
     return path + "/copyq.log";
 }
 
-QString logFileName(int i)
-{
-    if (i <= 0)
-        return logFileName();
-    return logFileName() + "." + QString::number(i);
-}
-
-void rotateLogFiles()
-{
-    for (int i = logFileCount - 1; i > 0; --i) {
-        const QString sourceFileName = logFileName(i - 1);
-        const QString targetFileName = logFileName(i);
-        QFile::remove(targetFileName);
-        QFile::rename(sourceFileName, targetFileName);
-    }
-}
-
-} // namespace
-
-QString readLogFile()
+QString readLogFile(int maxReadSize)
 {
     SystemMutexLocker lock(getSessionMutex());
 
     QString content;
-    for (int i = 0; i < logFileCount; ++i)
-        content.prepend( readLogFile(logFileName(i)) );
-
-    content.prepend(logFileName() + "\n\n");
+    for (int i = 0; i < logFileCount; ++i) {
+        const int toRead = maxReadSize - content.size();
+        content.prepend( readLogFile(logFileName(i), toRead) );
+        if ( maxReadSize <= content.size() )
+            break;
+    }
 
     return content;
 }
@@ -245,12 +299,24 @@ bool hasLogLevel(LogLevel level)
     return currentLogLevel >= level;
 }
 
-QString createLogMessage(const QString &text, const LogLevel level)
+QByteArray logLevelLabel(LogLevel level)
 {
-    const QString timeStamp =
-            QDateTime::currentDateTime().toString(" [yyyy-MM-dd hh:mm:ss.zzz]");
+    switch(level) {
+    case LogWarning:
+        return "Warning";
+    case LogError:
+        return "ERROR";
+    case LogDebug:
+        return "DEBUG";
+    case LogTrace:
+        return "TRACE";
+    case LogNote:
+    case LogAlways:
+        return "Note";
+    }
 
-    return "CopyQ " + logLevelLabel(level) + timeStamp + ": " + text + "\n";
+    Q_ASSERT(false);
+    return "";
 }
 
 void log(const QString &text, const LogLevel level)
@@ -260,7 +326,8 @@ void log(const QString &text, const LogLevel level)
 
     SystemMutexLocker lock(getSessionMutex());
 
-    const QByteArray msg = createLogMessage(text, level).toUtf8();
+    const auto msgText = text.toUtf8();
+    const auto msg = createLogMessage(msgText, level);
 
     QFile f( logFileName() );
     const bool writtenToLogFile = f.open(QIODevice::Append) && f.write(msg);
@@ -268,12 +335,23 @@ void log(const QString &text, const LogLevel level)
         f.close();
 
     // Log to file and if needed to stderr.
-    if ( !writtenToLogFile || level <= LogWarning ) {
+    if ( !writtenToLogFile || level <= LogWarning || hasLogLevel(LogDebug) ) {
         QFile ferr;
         ferr.open(stderr, QIODevice::WriteOnly);
-        ferr.write(msg);
+        const auto simpleMsg = createSimpleLogMessage(msgText, level);
+        ferr.write(simpleMsg);
     }
 
     if ( writtenToLogFile && f.size() > logFileSize )
         rotateLogFiles();
+}
+
+void setCurrentThreadName(const QString &name)
+{
+    Q_ASSERT(qApp != nullptr);
+
+    const auto id = QCoreApplication::applicationPid();
+    const auto threadLabel = name.toUtf8() + "-" + QByteArray::number(id);
+    const auto size = std::min( maxThreadLabelSize, threadLabel.size() );
+    std::memcpy( currentThreadLabel, threadLabel.constData(), static_cast<size_t>(size) );
 }

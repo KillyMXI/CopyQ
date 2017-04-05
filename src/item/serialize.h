@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -25,16 +25,16 @@
 class QAbstractItemModel;
 class QByteArray;
 class QDataStream;
-class QFile;
+class QIODevice;
 
-void serializeData(QDataStream *out, const QVariantMap &data);
+void serializeData(QDataStream *stream, const QVariantMap &data);
 void deserializeData(QDataStream *stream, QVariantMap *data);
 QByteArray serializeData(const QVariantMap &data);
 bool deserializeData(QVariantMap *data, const QByteArray &bytes);
 
 bool serializeData(const QAbstractItemModel &model, QDataStream *stream);
-bool deserializeData(QAbstractItemModel *model, QDataStream *stream);
-bool serializeData(const QAbstractItemModel &model, QFile *file);
-bool deserializeData(QAbstractItemModel *model, QFile *file);
+bool deserializeData(QAbstractItemModel *model, QDataStream *stream, int maxItems);
+bool serializeData(const QAbstractItemModel &model, QIODevice *file);
+bool deserializeData(QAbstractItemModel *model, QIODevice *file, int maxItems);
 
 #endif // SERIALIZE_H

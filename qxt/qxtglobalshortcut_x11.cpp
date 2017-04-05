@@ -37,16 +37,45 @@
 #   include <xcb/xcb.h>
 #endif
 #include <QVector>
+#include <QWidget>
+#include <X11/keysym.h>
 #include <X11/Xlib.h>
 
+#include "xcbkeyboard.h"
+
 namespace {
+
+/**
+ * Creates first invisible application window
+ * so X11 key press events can be received.
+ *
+ * This is used for Cinnamon and KDE.
+ */
+void createFirstWindow()
+{
+    static QWidget *w = nullptr;
+    if (!w) {
+        // Try hard so the window is not visible.
+
+        // Tool tips won't show in taskbar.
+        w = new QWidget(nullptr, Qt::ToolTip);
+
+        // Move out of screen (if it's not possible to show the window minimized).
+        w->resize(1, 1);
+        w->move(-100000, -100000);
+
+        // Show and hide quickly.
+        w->showMinimized();
+        w->hide();
+    }
+}
 
 QVector<quint32> maskModifiers()
 {
     return QVector<quint32>() << 0 << Mod2Mask << LockMask << (Mod2Mask | LockMask);
 }
 
-typedef int (*X11ErrorHandler)(Display* display, XErrorEvent* event);
+using X11ErrorHandler = int (*)(Display* display, XErrorEvent* event);
 
 class QxtX11ErrorHandler {
 public:
@@ -73,7 +102,7 @@ public:
     }
 
     QxtX11ErrorHandler()
-        : m_previousErrorHandler(0)
+        : m_previousErrorHandler(nullptr)
     {
         error = false;
         m_previousErrorHandler = XSetErrorHandler(qxtX11ErrorHandler);
@@ -93,8 +122,10 @@ bool QxtX11ErrorHandler::error = false;
 class QxtX11Data {
 public:
     QxtX11Data()
-        : m_display(0)
+        : m_display(nullptr)
     {
+        createFirstWindow();
+
 #if QT_VERSION < QT_VERSION_CHECK(5,0,0)
         m_display = QX11Info::display();
 #else
@@ -107,7 +138,7 @@ public:
 
     bool isValid()
     {
-        return m_display != 0;
+        return m_display != nullptr;
     }
 
     Display *display()
@@ -125,8 +156,8 @@ public:
     {
         QxtX11ErrorHandler errorHandler;
 
-        foreach (quint32 maskMods, maskModifiers()) {
-            XGrabKey(display(), keycode, modifiers | maskMods, window, True,
+        for (const auto maskMods : maskModifiers()) {
+            XGrabKey(display(), static_cast<int>(keycode), modifiers | maskMods, window, True,
                      GrabModeAsync, GrabModeAsync);
             if (errorHandler.error)
                 break;
@@ -144,8 +175,8 @@ public:
     {
         QxtX11ErrorHandler errorHandler;
 
-        foreach (quint32 maskMods, maskModifiers()) {
-            XUngrabKey(display(), keycode, modifiers | maskMods, window);
+        for (const auto maskMods : maskModifiers()) {
+            XUngrabKey(display(), static_cast<int>(keycode), modifiers | maskMods, window);
         }
 
         return !errorHandler.error;
@@ -154,6 +185,20 @@ public:
 private:
     Display *m_display;
 };
+
+KeySym qtKeyToXKeySym(Qt::Key key)
+{
+    const auto keySym = XStringToKeysym(QKeySequence(key).toString().toLatin1().data());
+    if (keySym != NoSymbol)
+        return keySym;
+
+    for (int i = 0; KeyTbl[i] != 0; i += 2) {
+        if (KeyTbl[i + 1] == key)
+            return KeyTbl[i];
+    }
+
+    return static_cast<ushort>(key);
+}
 
 } // namespace
 
@@ -172,14 +217,14 @@ bool QxtGlobalShortcutPrivate::nativeEventFilter(const QByteArray & eventType,
 {
     Q_UNUSED(result);
 
-    xcb_key_press_event_t *kev = 0;
+    xcb_key_press_event_t *kev = nullptr;
     if (eventType == "xcb_generic_event_t") {
         xcb_generic_event_t* ev = static_cast<xcb_generic_event_t *>(message);
         if ((ev->response_type & 127) == XCB_KEY_PRESS)
             kev = static_cast<xcb_key_press_event_t *>(message);
     }
 
-    if (kev != 0) {
+    if (kev != nullptr) {
         unsigned int keycode = kev->detail;
         unsigned int keystate = 0;
         if(kev->state & XCB_MOD_MASK_1)
@@ -224,10 +269,7 @@ quint32 QxtGlobalShortcutPrivate::nativeKeycode(Qt::Key key)
     if (!x11.isValid())
         return 0;
 
-    KeySym keysym = XStringToKeysym(QKeySequence(key).toString().toLatin1().data());
-    if (keysym == NoSymbol)
-        keysym = static_cast<ushort>(key);
-
+    const KeySym keysym = qtKeyToXKeySym(key);
     return XKeysymToKeycode(x11.display(), keysym);
 }
 

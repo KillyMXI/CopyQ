@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,8 +24,11 @@
 #include <QPersistentModelIndex>
 #include <QPointer>
 #include <QVariantMap>
+#include <QTimer>
 
+class QBuffer;
 class QListWidgetItem;
+class QMovie;
 
 namespace Ui {
     class ClipboardDialog;
@@ -39,12 +42,12 @@ public:
     /**
      * Create dialog with clipboard data.
      */
-    explicit ClipboardDialog(QWidget *parent = NULL);
+    explicit ClipboardDialog(QWidget *parent = nullptr);
 
     /**
      * Create dialog with item data.
      */
-    explicit ClipboardDialog(const QPersistentModelIndex &index, QAbstractItemModel *model, QWidget *parent = NULL);
+    explicit ClipboardDialog(const QPersistentModelIndex &index, QAbstractItemModel *model, QWidget *parent = nullptr);
 
     ~ClipboardDialog();
 
@@ -59,6 +62,8 @@ private slots:
 
     void onDataChanged(const QModelIndex &topLeft, const QModelIndex &bottomRight);
 
+    void addText();
+
 private:
     void init();
 
@@ -68,6 +73,11 @@ private:
     QPointer<QAbstractItemModel> m_model;
     QPersistentModelIndex m_index;
     QVariantMap m_data;
+    QString m_textToShow;
+    QTimer m_timerTextLoad;
+
+    QBuffer *m_animationBuffer;
+    QMovie *m_animation;
 };
 
 #endif // CLIPBOARDDIALOG_H

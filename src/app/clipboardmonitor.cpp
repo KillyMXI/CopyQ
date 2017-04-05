@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -24,6 +24,7 @@
 #include "common/monitormessagecode.h"
 #include "item/serialize.h"
 #include "platform/platformclipboard.h"
+#include "platform/platformwindow.h"
 
 #include <QApplication>
 
@@ -31,7 +32,7 @@ namespace {
 
 bool hasSameData(const QVariantMap &data, const QVariantMap &lastData)
 {
-    foreach (const QString &format, lastData.keys()) {
+    for (const auto &format : lastData.keys()) {
         if ( !format.startsWith(COPYQ_MIME_PREFIX)
              && !data.contains(format) )
         {
@@ -39,7 +40,7 @@ bool hasSameData(const QVariantMap &data, const QVariantMap &lastData)
         }
     }
 
-    foreach (const QString &format, data.keys()) {
+    for (const auto &format : data.keys()) {
         if ( !format.startsWith(COPYQ_MIME_PREFIX)
              && !data[format].toByteArray().isEmpty()
              && data[format] != lastData.value(format) )
@@ -53,23 +54,20 @@ bool hasSameData(const QVariantMap &data, const QVariantMap &lastData)
 
 } // namespace
 
-ClipboardMonitor::ClipboardMonitor(int &argc, char **argv)
+ClipboardMonitor::ClipboardMonitor(int &argc, char **argv, const QString &serverName, const QString &sessionName)
     : Client()
-    , App(createPlatformNativeInterface()->createMonitorApplication(argc, argv))
+    , App("Monitor", createPlatformNativeInterface()->createMonitorApplication(argc, argv),
+          sessionName)
     , m_clipboard(createPlatformNativeInterface()->clipboard())
 {
     restoreSettings();
-
-    Q_ASSERT(argc == 3);
-    const QString serverName( QString::fromUtf8(argv[2]) );
 
 #ifdef HAS_TESTS
     if ( serverName == QString("copyq_TEST") )
         qApp->setProperty("CopyQ_testing", true);
 #endif
 
-    if ( !startClientSocket(serverName, argc, argv) )
-        exit(1);
+    startClientSocket(serverName, argc, argv, 0, 0);
 }
 
 void ClipboardMonitor::onClipboardChanged(PlatformClipboard::Mode mode)
@@ -78,9 +76,13 @@ void ClipboardMonitor::onClipboardChanged(PlatformClipboard::Mode mode)
     QVariantMap &lastData = m_lastData[mode];
 
     if ( hasSameData(data, lastData) ) {
-        COPYQ_LOG("Ignoring unchanged clipboard content");
+        COPYQ_LOG( QString("Ignoring unchanged %1")
+                   .arg(mode == PlatformClipboard::Clipboard ? "clipboard" : "selection") );
         return;
     }
+
+    COPYQ_LOG( QString("%1 changed")
+               .arg(mode == PlatformClipboard::Clipboard ? "Clipboard" : "Selection") );
 
     if (mode != PlatformClipboard::Clipboard) {
         const QString modeName = mode == PlatformClipboard::Selection
@@ -112,7 +114,7 @@ void ClipboardMonitor::onMessageReceived(const QByteArray &message, int messageC
 
         if ( hasLogLevel(LogDebug) ) {
             COPYQ_LOG("Loading configuration:");
-            foreach (const QString &key, settings.keys()) {
+            for (const auto &key : settings.keys()) {
                 const QVariant val = settings[key];
                 const QString str = val.canConvert<QStringList>() ? val.toStringList().join(",")
                                                                   : val.toString();
@@ -123,7 +125,7 @@ void ClipboardMonitor::onMessageReceived(const QByteArray &message, int messageC
         if ( settings.contains("formats") )
             m_formats = settings["formats"].toStringList();
 
-        connect( m_clipboard.data(), SIGNAL(changed(PlatformClipboard::Mode)),
+        connect( m_clipboard.get(), SIGNAL(changed(PlatformClipboard::Mode)),
                  this, SLOT(onClipboardChanged(PlatformClipboard::Mode)),
                  Qt::UniqueConnection );
 
@@ -133,6 +135,10 @@ void ClipboardMonitor::onMessageReceived(const QByteArray &message, int messageC
     } else if (messageCode == MonitorChangeClipboard
             || messageCode == MonitorChangeSelection)
     {
+        COPYQ_LOG( QString("Received change %1 request (%2 KiB)")
+                   .arg(messageCode == MonitorChangeClipboard ? "clipboard" : "selection")
+                   .arg(message.size() / 1024.0) );
+
         QVariantMap data;
         deserializeData(&data, message);
         if (messageCode == MonitorChangeClipboard)
@@ -147,4 +153,9 @@ void ClipboardMonitor::onMessageReceived(const QByteArray &message, int messageC
 void ClipboardMonitor::onDisconnected()
 {
     exit(0);
+}
+
+void ClipboardMonitor::onConnectionFailed()
+{
+    exit(1);
 }

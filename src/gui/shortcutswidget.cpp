@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,6 +22,7 @@
 
 #include "common/command.h"
 #include "common/common.h"
+#include "common/shortcuts.h"
 #include "gui/commanddialog.h"
 #include "gui/iconfactory.h"
 #include "gui/iconfont.h"
@@ -30,9 +31,10 @@
 #include "gui/shortcutbutton.h"
 
 #include <QList>
-#include <QPointer>
 #include <QPushButton>
 #include <QSettings>
+
+#include <algorithm>
 
 namespace {
 
@@ -77,7 +79,7 @@ ShortcutsWidget::~ShortcutsWidget()
     delete ui;
 }
 
-void ShortcutsWidget::loadShortcuts(QSettings &settings)
+void ShortcutsWidget::loadShortcuts(const QSettings &settings)
 {
     MenuItems items = menuItems();
     ::loadShortcuts(&items, settings);
@@ -90,7 +92,7 @@ void ShortcutsWidget::loadShortcuts(QSettings &settings)
         table->removeRow(0);
 
 
-    foreach (const MenuItem &item, items) {
+    for (const auto &item : items) {
         MenuAction action;
         action.iconName = item.iconName;
         action.iconId = item.iconId;
@@ -100,7 +102,7 @@ void ShortcutsWidget::loadShortcuts(QSettings &settings)
         const int row = table->rowCount();
         table->insertRow(row);
 
-        QTableWidgetItem *tableItem = new QTableWidgetItem();
+        auto tableItem = new QTableWidgetItem();
         table->setItem(row, Columns::Empty, tableItem);
         tableItem->setFlags(Qt::NoItemFlags);
 
@@ -116,7 +118,7 @@ void ShortcutsWidget::loadShortcuts(QSettings &settings)
         action.shortcutButton = new ShortcutButton(table);
         table->setCellWidget(row, Columns::Shortcut, action.shortcutButton);
         action.shortcutButton->setDefaultShortcut(item.defaultShortcut);
-        foreach (const QKeySequence &shortcut, item.shortcuts)
+        for (const auto &shortcut : item.shortcuts)
             action.shortcutButton->addShortcut(shortcut);
 
         action.iconId = item.iconId;
@@ -132,22 +134,26 @@ void ShortcutsWidget::loadShortcuts(QSettings &settings)
     }
 }
 
-void ShortcutsWidget::saveShortcuts(QSettings &settings) const
+void ShortcutsWidget::saveShortcuts(QSettings *settings) const
 {
-    foreach (const MenuAction &action, m_actions) {
-        if ( action.settingsKey.isEmpty() ) {
+    for (const auto &action : m_actions) {
+        if ( !action.settingsKey.isEmpty() ) {
             QStringList shortcutNames;
-            foreach (const QKeySequence &shortcut, action.shortcutButton->shortcuts())
+            for (const auto &shortcut : action.shortcutButton->shortcuts())
                 shortcutNames.append(portableShortcutText(shortcut));
-            settings.setValue(action.settingsKey, shortcutNames);
+
+            // Workaround for QTBUG-51237 (saving empty list results in invalid value).
+            if (shortcutNames.isEmpty())
+                settings->setValue(action.settingsKey, QString());
+            else
+                settings->setValue(action.settingsKey, shortcutNames);
         }
     }
 }
 
 void ShortcutsWidget::showEvent(QShowEvent *event)
 {
-    for (int i = 0; i < m_actions.size(); ++i) {
-        MenuAction &action = m_actions[i];
+    for (auto &action : m_actions) {
         if ( action.tableItem->icon().isNull() )
             action.tableItem->setIcon( getIcon(action.iconName, action.iconId) );
     }
@@ -172,12 +178,12 @@ void ShortcutsWidget::onShortcutRemoved(const QKeySequence &shortcut)
 
 void ShortcutsWidget::checkAmbiguousShortcuts()
 {
-    static const QIcon iconOverriden = getIcon("", IconInfoSign);
-    static const QIcon iconAmbiguous = getIcon("", IconExclamationSign);
-    static const QString toolTipOverriden = tr("There is command overriding this shortcut.");
-    static const QString toolTipAmbiguous = tr("Shortcut already exists!");
+    const auto iconOverriden = getIcon("", IconInfoSign);
+    const auto iconAmbiguous = getIcon("", IconExclamationSign);
+    const auto toolTipOverriden = tr("There is command overriding this shortcut.");
+    const auto toolTipAmbiguous = tr("Shortcut already exists!");
 
-    qSort(m_shortcuts);
+    std::sort( m_shortcuts.begin(), m_shortcuts.end() );
     QList<QKeySequence> ambiguousShortcuts;
     for ( int i = 1; i < m_shortcuts.size(); ++i ) {
         if (m_shortcuts[i] == m_shortcuts[i - 1])
@@ -185,15 +191,15 @@ void ShortcutsWidget::checkAmbiguousShortcuts()
     }
 
     QList<QKeySequence> commandShortcuts;
-    foreach ( const Command &command, loadCommands(true) ) {
-        foreach (const QString &shortcutText, command.shortcuts + command.globalShortcuts) {
+    for ( const auto &command : loadEnabledCommands() ) {
+        for (const auto &shortcutText : command.shortcuts + command.globalShortcuts) {
             const QKeySequence shortcut(shortcutText, QKeySequence::PortableText);
             if ( !shortcut.isEmpty() )
                 commandShortcuts.append(shortcut);
         }
     }
 
-    foreach ( const MenuAction &action, m_actions ) {
+    for ( const auto &action : m_actions ) {
         action.shortcutButton->checkAmbiguousShortcuts(commandShortcuts, iconOverriden, toolTipOverriden);
         action.shortcutButton->checkAmbiguousShortcuts(ambiguousShortcuts, iconAmbiguous, toolTipAmbiguous);
     }
@@ -203,10 +209,10 @@ void ShortcutsWidget::on_lineEditFilter_textChanged(const QString &text)
 {
     const QString needle = text.toLower();
 
-    foreach ( const MenuAction &action, m_actions ) {
+    for ( const auto &action : m_actions ) {
         bool found = uiText(action.text).toLower().contains(needle);
         if (!found) {
-                foreach ( const QKeySequence &shortcut, action.shortcutButton->shortcuts() ) {
+                for ( const auto &shortcut : action.shortcutButton->shortcuts() ) {
                     if ( shortcut.toString(QKeySequence::NativeText).toLower().contains(needle) ) {
                         found = true;
                         break;

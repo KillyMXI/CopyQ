@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,8 +23,9 @@
 #include <QMap>
 #include <QListWidgetItem>
 #include <QPointer>
-#include <QSharedPointer>
 #include <QWidget>
+
+#include <memory>
 
 namespace Ui {
 class ItemOrderList;
@@ -42,27 +43,27 @@ public:
     class Item {
         friend class ItemOrderList;
     public:
-        virtual ~Item() {}
-        virtual QVariant data() const { return QVariant(); }
+        virtual ~Item() = default;
+        virtual QVariant data() const = 0;
     private:
         virtual QWidget *createWidget(QWidget *parent) const = 0;
     };
 
-    typedef QSharedPointer<Item> ItemPtr;
+    using ItemPtr = std::shared_ptr<Item>;
 
-    explicit ItemOrderList(QWidget *parent = 0);
+    explicit ItemOrderList(QWidget *parent = nullptr);
     ~ItemOrderList();
 
     void setAddRemoveButtonsVisible(bool visible);
 
     void clearItems();
 
-    void appendItem(const QString &label, bool checked, bool highlight, const QIcon &icon, const ItemPtr &listItem);
+    void appendItem(const QString &label, bool checked, bool highlight, const QIcon &icon, const ItemPtr &item);
 
-    void insertItem(const QString &label, bool checked, bool highlight, const QIcon &icon, const ItemPtr &Item, int targetRow);
+    void insertItem(const QString &label, bool checked, bool highlight, const QIcon &icon, const ItemPtr &item, int targetRow);
 
     /// Returns widget created by Item::createWidget() given @a row
-    /// (could be NULL is not yet created).
+    /// (could be nullptr is not yet created).
     QWidget *widget(int row) const;
 
     /// Returns Item::data() for item in given @a row.
@@ -99,9 +100,9 @@ signals:
     void dropped(const QString &text, int row);
 
 protected:
-    void dragEnterEvent(QDragEnterEvent *event);
-    void dropEvent(QDropEvent *event);
-    void showEvent(QShowEvent *event);
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void on_pushButtonUp_clicked();
@@ -123,7 +124,7 @@ private:
 
     QListWidgetItem *listItem(int row) const;
     void setCurrentItemWidget(QWidget *widget);
-    void setItemHighlight(QListWidgetItem *listItem, bool highlight);
+    void setItemHighlight(QListWidgetItem *item, bool highlight);
     QWidget *createWidget(QListWidgetItem *item);
 
     Ui::ItemOrderList *ui;

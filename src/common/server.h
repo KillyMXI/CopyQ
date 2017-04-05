@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,32 +20,42 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include <QMetaType>
 #include <QObject>
 
-class Arguments;
+#include <memory>
+
 class ClientSocket;
 class QLocalServer;
+
+using ClientSocketPtr = std::shared_ptr<ClientSocket>;
+Q_DECLARE_METATYPE(ClientSocketPtr)
 
 class Server : public QObject
 {
     Q_OBJECT
 public:
-    explicit Server(const QString &name, QObject *parent = NULL);
+    explicit Server(const QString &name, QObject *parent = nullptr);
+
+    ~Server();
 
     void start();
 
     bool isListening() const;
 
+public slots:
+    void close();
+
 signals:
-    void newConnection(const Arguments &args, ClientSocket *socket);
+    void newConnection(const ClientSocketPtr &socket);
 
 private slots:
     void onNewConnection();
-    void onSocketClosed();
-    void close();
+    void onSocketDestroyed();
 
 private:
     QLocalServer *m_server;
+    QObject *m_systemMutex;
     int m_socketCount;
 };
 

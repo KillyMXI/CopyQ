@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -18,8 +18,6 @@
 */
 
 #include "config.h"
-
-#include "common/log.h"
 
 #include <QApplication>
 #include <QByteArray>
@@ -64,16 +62,6 @@ QString resolutionTag(const QWidget &widget)
             .arg(screenGeometry.height());
 }
 
-QString windowGeometryToString(const QWidget &widget)
-{
-    const QRect geometry = widget.geometry();
-    return QString("%1,%2 %3x%4")
-            .arg(geometry.x())
-            .arg(geometry.y())
-            .arg(geometry.width())
-            .arg(geometry.height());
-}
-
 } // namespace
 
 QString getConfigurationFilePath(const QString &suffix)
@@ -110,21 +98,26 @@ void restoreWindowGeometry(QWidget *w, bool openOnCurrentScreen)
     QByteArray geometry = geometryOptionValue(optionName + tag).toByteArray();
 
     // If geometry for screen resolution doesn't exist, use last saved one.
-    if (geometry.isEmpty())
+    if (geometry.isEmpty()) {
         geometry = geometryOptionValue(optionName).toByteArray();
+
+        // If geometry for the screen doesn't exist, move window to the middle of the screen.
+        if (geometry.isEmpty()) {
+            const QRect availableGeometry = QApplication::desktop()->availableGeometry(QCursor::pos());
+            w->move( availableGeometry.center() - w->rect().center() );
+            geometry = w->saveGeometry();
+        }
+    }
 
     if (w->saveGeometry() != geometry) {
         w->restoreGeometry(geometry);
 
         // Workaround for broken geometry restore.
-        if (w->width() <= 0 || w->height() <= 0) {
-            COPYQ_LOG("Fixing broken window geometry " + optionName + tag + ": " + windowGeometryToString(*w));
+        if ( w->geometry().isEmpty() ) {
             w->showNormal();
             w->restoreGeometry(geometry);
             w->showMinimized();
         }
-
-        COPYQ_LOG("Restored window geometry " + optionName + tag + ": " + windowGeometryToString(*w));
     }
 }
 
@@ -135,7 +128,6 @@ void saveWindowGeometry(QWidget *w, bool openOnCurrentScreen)
     QSettings geometrySettings( getGeometryConfigurationFilePath(), QSettings::IniFormat );
     geometrySettings.setValue( optionName + tag, w->saveGeometry() );
     geometrySettings.setValue( optionName, w->saveGeometry() );
-    COPYQ_LOG("Saved window geometry " + optionName + tag + ": " + windowGeometryToString(*w));
 }
 
 QByteArray mainWindowState(const QString &mainWindowObjectName)
@@ -148,4 +140,26 @@ void saveMainWindowState(const QString &mainWindowObjectName, const QByteArray &
 {
     const QString optionName = "Options/" + mainWindowObjectName + "_state";
     setGeometryOptionValue(optionName, state);
+}
+
+void moveToCurrentWorkspace(QWidget *w)
+{
+#ifdef COPYQ_WS_X11
+    /* Re-initialize window in window manager so it can popup on current workspace. */
+    if (w->isVisible()) {
+        w->hide();
+        w->show();
+    }
+#else
+    Q_UNUSED(w);
+#endif
+}
+
+void moveWindowOnScreen(QWidget *w, const QPoint &pos)
+{
+    const QRect availableGeometry = QApplication::desktop()->availableGeometry(pos);
+    const int x = qMax(0, qMin(pos.x(), availableGeometry.right() - w->width()));
+    const int y = qMax(0, qMin(pos.y(), availableGeometry.bottom() - w->height()));
+    w->move(x, y);
+    moveToCurrentWorkspace(w);
 }

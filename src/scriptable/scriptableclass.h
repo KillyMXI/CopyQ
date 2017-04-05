@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -40,7 +40,7 @@ public:
 
     QScriptValue constructor();
 
-    QScriptValue prototype() const;
+    QScriptValue prototype() const override;
 
     QScriptValue newInstance(QObject *instance);
 
@@ -58,7 +58,7 @@ template <typename Object, typename ObjectPrototype>
 class ScriptableClass : public ScriptableClassBase
 {
 public:
-    typedef Object ScriptableValueType;
+    using ScriptableValueType = Object;
 
     explicit ScriptableClass(QScriptEngine *engine)
         : ScriptableClassBase(engine)

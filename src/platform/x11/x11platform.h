@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -17,39 +17,34 @@
     along with CopyQ.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef X11DISPLAY_H
-#define X11DISPLAY_H
+#ifndef X11PLATFORM_H
+#define X11PLATFORM_H
 
 #include "platform/platformnativeinterface.h"
 
-#include <QSharedPointer>
-
-class QApplication;
-class QCoreApplication;
-class X11DisplayGuard;
+#include <QKeyEvent>
+#include <QString>
 
 class X11Platform : public PlatformNativeInterface
 {
 public:
-    X11Platform();
+    X11Platform() = default;
 
     ~X11Platform();
 
-    PlatformWindowPtr getWindow(WId winId);
+    PlatformWindowPtr getWindow(WId winId) override;
 
-    PlatformWindowPtr getCurrentWindow();
+    PlatformWindowPtr getCurrentWindow() override;
 
-    PlatformWindowPtr deserialize(const QByteArray &data);
+    bool canGetWindowTitle() override { return true; }
 
-    bool serialize(WId winId, QByteArray *data);
-
-    bool canAutostart();
+    bool canAutostart() override;
 
     /**
      * Return true only if "copyq.desktop" file exists in "autostart" directory of current user and
      * it doesn't contain "Hidden" property or its value is false.
      */
-    bool isAutostartEnabled();
+    bool isAutostartEnabled() override;
 
     /**
      * Replace "Hidden" property in current user's autostart "copyq.desktop" file
@@ -57,20 +52,31 @@ public:
      *
      * Additionally, replace "Exec" property with current application path.
      */
-    void setAutostartEnabled(bool);
+    void setAutostartEnabled(bool) override;
 
-    QApplication *createServerApplication(int &argc, char **argv);
+    QCoreApplication *createConsoleApplication(int &argc, char **argv) override;
 
-    QApplication *createMonitorApplication(int &argc, char **argv);
+    QApplication *createServerApplication(int &argc, char **argv) override;
 
-    QCoreApplication *createClientApplication(int &argc, char **argv);
+    QApplication *createMonitorApplication(int &argc, char **argv) override;
 
-    void loadSettings() {}
+    QCoreApplication *createClientApplication(int &argc, char **argv) override;
 
-    PlatformClipboardPtr clipboard();
+    void loadSettings() override {}
 
-private:
-    QSharedPointer<X11DisplayGuard> d;
+    PlatformClipboardPtr clipboard() override;
+
+    int keyCode(const QKeyEvent &event) override { return event.key(); }
+
+    QStringList getCommandLineArguments(int argc, char **argv) override;
+
+    bool findPluginDir(QDir *pluginsDir) override;
+
+    QString defaultEditorCommand() override;
+
+    QString translationPrefix() override;
+
+    QString themePrefix() override { return QString(); }
 };
 
-#endif // X11DISPLAY_H
+#endif // X11PLATFORM_H

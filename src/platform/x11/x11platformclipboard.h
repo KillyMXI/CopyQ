@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,9 +23,10 @@
 #include "platform/dummy/dummyclipboard.h"
 
 #include <QClipboard>
-#include <QSharedPointer>
 #include <QStringList>
 #include <QTimer>
+
+#include <memory>
 
 class X11DisplayGuard;
 
@@ -33,16 +34,16 @@ class X11PlatformClipboard : public DummyClipboard
 {
     Q_OBJECT
 public:
-    X11PlatformClipboard(const QSharedPointer<X11DisplayGuard> &d);
+    explicit X11PlatformClipboard(const std::shared_ptr<X11DisplayGuard> &d);
 
-    void loadSettings(const QVariantMap &settings);
+    void loadSettings(const QVariantMap &settings) override;
 
-    QVariantMap data(Mode mode, const QStringList &formats) const;
+    QVariantMap data(Mode mode, const QStringList &formats) const override;
 
-    void setData(Mode mode, const QVariantMap &dataMap);
+    void setData(Mode mode, const QVariantMap &dataMap) override;
 
 private slots:
-    void onChanged(QClipboard::Mode mode);
+    void onChanged(QClipboard::Mode mode) override;
     void checkSelectionComplete();
     void resetClipboard();
 
@@ -56,7 +57,7 @@ private:
      */
     bool maybeResetClipboard(QClipboard::Mode mode);
 
-    QSharedPointer<X11DisplayGuard> d;
+    std::shared_ptr<X11DisplayGuard> d;
 
     QStringList m_formats;
 

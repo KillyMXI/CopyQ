@@ -20,9 +20,9 @@
 #include "itemdata.h"
 #include "ui_itemdatasettings.h"
 
-#include "common/common.h"
-#include "common/mimetypes.h"
 #include "common/contenttype.h"
+#include "common/mimetypes.h"
+#include "common/textdata.h"
 
 #include <QContextMenuEvent>
 #include <QModelIndex>
@@ -84,8 +84,8 @@ QString stringFromBytes(const QByteArray &bytes, const QString &format)
 
 bool emptyIntersection(const QStringList &lhs, const QStringList &rhs)
 {
-    for (int i = 0; i < lhs.size(); ++i) {
-        if ( rhs.contains(lhs[i]) )
+    for (const auto &l : lhs) {
+        if ( rhs.contains(l) )
             return false;
     }
 
@@ -105,7 +105,7 @@ ItemData::ItemData(const QModelIndex &index, int maxBytes, QWidget *parent)
     QString text;
 
     const QVariantMap data = index.data(contentType::data).toMap();
-    foreach ( const QString &format, data.keys() ) {
+    for ( const auto &format : data.keys() ) {
         QByteArray bytes = data[format].toByteArray();
         const int size = bytes.size();
         bool trimmed = size > maxBytes;
@@ -156,17 +156,19 @@ ItemDataLoader::ItemDataLoader()
 {
 }
 
-ItemDataLoader::~ItemDataLoader()
-{
-}
+ItemDataLoader::~ItemDataLoader() = default;
 
-ItemWidget *ItemDataLoader::create(const QModelIndex &index, QWidget *parent) const
+ItemWidget *ItemDataLoader::create(const QModelIndex &index, QWidget *parent, bool preview) const
 {
+    if ( index.data(contentType::isHidden).toBool() )
+        return nullptr;
+
     const QStringList formats = index.data(contentType::data).toMap().keys();
     if ( emptyIntersection(formats, formatsToSave()) )
-        return NULL;
+        return nullptr;
 
-    return new ItemData( index, m_settings.value("max_bytes", defaultMaxBytes).toInt(), parent );
+    const int bytes = preview ? 4096 : m_settings.value("max_bytes", defaultMaxBytes).toInt();
+    return new ItemData(index, bytes, parent);
 }
 
 QStringList ItemDataLoader::formatsToSave() const
@@ -178,7 +180,7 @@ QStringList ItemDataLoader::formatsToSave() const
 
 QVariantMap ItemDataLoader::applySettings()
 {
-    Q_ASSERT(ui != NULL);
+    Q_ASSERT(ui != nullptr);
     m_settings["formats"] = ui->plainTextEditFormats->toPlainText().split( QRegExp("[;,\\s]+") );
     m_settings["max_bytes"] = ui->spinBoxMaxChars->value();
     return  m_settings;

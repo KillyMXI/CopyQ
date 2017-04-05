@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,22 +20,22 @@
 #ifndef PLATFORMNATIVEINTERFACE_H
 #define PLATFORMNATIVEINTERFACE_H
 
-#include "platform/platformwindow.h"
-#include "platform/platformclipboard.h"
+#include <QWidget> // WId
 
-#include <QKeyEvent>
-#include <QSharedPointer>
-#include <QWidget>
-#include <Qt>
+#include <memory>
 
 class QApplication;
-class QCoreApplication;
 class QByteArray;
+class QCoreApplication;
+class QDir;
+class QKeyEvent;
 class QWidget;
 
-typedef QSharedPointer<PlatformWindow> PlatformWindowPtr;
+class PlatformWindow;
+class PlatformClipboard;
 
-typedef QSharedPointer<PlatformClipboard> PlatformClipboardPtr;
+using PlatformWindowPtr = std::shared_ptr<PlatformWindow>;
+using PlatformClipboardPtr = std::shared_ptr<PlatformClipboard>;
 
 /**
  * Interface for platform dependent code.
@@ -43,17 +43,22 @@ typedef QSharedPointer<PlatformClipboard> PlatformClipboardPtr;
 class PlatformNativeInterface
 {
 public:
-    virtual ~PlatformNativeInterface() {}
+    virtual ~PlatformNativeInterface() = default;
 
     /**
-     * Get window from widget (NULL if failed or not implemented).
+     * Get window from widget (nullptr if failed or not implemented).
      */
     virtual PlatformWindowPtr getWindow(WId winId) = 0;
 
     /**
-     * Get currently focused window (NULL if failed or not implemented).
+     * Get currently focused window (nullptr if failed or not implemented).
      */
     virtual PlatformWindowPtr getCurrentWindow() = 0;
+
+    /**
+     * Return true only if window titles can be retrieved using PlatformWindow::getTitle().
+     */
+    virtual bool canGetWindowTitle() = 0;
 
     /**
      * Return true automatic the application start at system startup is supported.
@@ -69,6 +74,11 @@ public:
      * Enable automatic application start at system startup.
      */
     virtual void setAutostartEnabled(bool enable) = 0;
+
+    /**
+     * Create QCoreApplication object for console output (to show help or version and quit).
+     */
+    virtual QCoreApplication *createConsoleApplication(int &argc, char **argv) = 0;
 
     /**
      * Create QApplication object for server.
@@ -91,20 +101,6 @@ public:
     virtual void loadSettings() = 0;
 
     /**
-     * Deserialize window from data (for serialization use PlatformNativeInterface::serialize()).
-     * Only used to steal window focus on client side.
-     * Returns null pointer if deserialization fails.
-     */
-    virtual PlatformWindowPtr deserialize(const QByteArray &) { return PlatformWindowPtr(); }
-
-    /**
-     * Serialize window ID (before sending it to client).
-     * Only used to steal window focus on client side.
-     * Returns true if serialization is successful.
-     */
-    virtual bool serialize(WId, QByteArray *) { return false; }
-
-    /**
      * Return object for managing clipboard.
      */
     virtual PlatformClipboardPtr clipboard() = 0;
@@ -112,28 +108,50 @@ public:
     /**
      * Return Qt key code from key press event (possibly using QKeyEvent::nativeVirtualKey()).
      */
-    virtual int keyCode(const QKeyEvent &event) { return event.key(); }
+    virtual int keyCode(const QKeyEvent &event) = 0;
 
     /**
      * Returns list of command line arguments without executable name (argv[0]).
-     *
-     * Default implementation returns argv[1] up to argv[argc - 1] and assumes Utf-8 encoding.
      */
-    virtual QStringList getCommandLineArguments(int argc, char **argv)
-    {
-        QStringList arguments;
+    virtual QStringList getCommandLineArguments(int argc, char **argv) = 0;
 
-        for (int i = 1; i < argc; ++i)
-            arguments.append( QString::fromUtf8(argv[i]) );
+    /**
+     * Find directory with plugins and return true on success.
+     */
+    virtual bool findPluginDir(QDir *pluginsDir) = 0;
 
-        return arguments;
-    }
+    /**
+     * Default editor command (e.g. "notepad %1"; "%1" will be replaced with file name to edit).
+     */
+    virtual QString defaultEditorCommand() = 0;
+
+    /**
+     * Path to translations.
+     *
+     * Can be overridden by preprocessor flag COPYQ_TRANSLATION_PREFIX.
+     *
+     * Custom translation prefix can be added by setting COPYQ_TRANSLATION_PREFIX
+     * environment variable.
+     */
+    virtual QString translationPrefix() = 0;
+
+    /**
+     * Path to installed themes.
+     *
+     * Can be overridden by preprocessor flag COPYQ_THEME_PREFIX.
+     *
+     * Custom theme prefix can be added by setting COPYQ_THEME_PREFIX
+     * environment variable.
+     *
+     * Note: Customized themes are saved to settings path.
+     */
+    virtual QString themePrefix() = 0;
 };
 
 /**
  * Shared pointer type for PlatformNativeInterface instance.
  */
-typedef QSharedPointer<PlatformNativeInterface> PlatformPtr;
+using PlatformPtr = std::shared_ptr<PlatformNativeInterface>;
 
 /**
  * Factory method to create PlatformNativeInterface instance.

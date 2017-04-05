@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -36,13 +36,13 @@ class TabDialog : public QDialog
 
 public:
     /** Tab dialog type (new tab or rename existing tab). */
-    typedef enum {
+    enum TabDialogType {
         TabNew,
         TabRename,
         TabGroupRename
-    } TabDialogType;
+    };
 
-    explicit TabDialog(TabDialogType type, QWidget *parent = NULL);
+    explicit TabDialog(TabDialogType type, QWidget *parent = nullptr);
     ~TabDialog();
 
     /** Set tab index to rename (emitted parameter of accepted()). */

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -31,17 +31,14 @@ class ShortcutDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit ShortcutDialog(QWidget *parent = NULL);
+    explicit ShortcutDialog(QWidget *parent = nullptr);
     ~ShortcutDialog();
 
     /** Return accepted shortcut or empty one. */
     QKeySequence shortcut() const;
 
-    /** Expect modifier or accept shortcuts without one. */
-    void setExpectModifier(bool expectModifier) { m_expectModifier = expectModifier; }
-
 protected:
-    bool eventFilter(QObject *object, QEvent *event);
+    bool eventFilter(QObject *object, QEvent *event) override;
 
 private slots:
     void onResetButtonClicked();
@@ -54,7 +51,6 @@ private:
     Ui::ShortcutDialog *ui;
     QKeySequence m_shortcut;
     bool m_metaPressed;
-    bool m_expectModifier;
 };
 
 #endif // SHORTCUTDIALOG_H

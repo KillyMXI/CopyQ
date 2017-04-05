@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -26,33 +26,28 @@
 
 class QString;
 
-#ifdef Q_OS_WIN
-#   define DEFAULT_EDITOR "notepad %1"
-#elif defined(Q_OS_MAC)
-#   define DEFAULT_EDITOR "open -t %1"
-#else
-#   define DEFAULT_EDITOR "gedit %1"
-#endif
-
 QString defaultClipboardTabName();
 
 namespace Config {
 
+const int maxItems = 10000;
+
 template<typename ValueType>
 struct Config {
-    typedef ValueType Value;
+    using Value = ValueType;
     static Value defaultValue() { return Value(); }
     static Value value(Value v) { return v; }
 };
 
 struct autostart : Config<bool> {
     static QString name() { return "autostart"; }
+    static Value defaultValue();
 };
 
 struct maxitems : Config<int> {
     static QString name() { return "maxitems"; }
     static Value defaultValue() { return 200; }
-    static Value value(Value v) { return qBound(0, v, 10000); }
+    static Value value(Value v) { return qBound(0, v, maxItems); }
 };
 
 struct clipboard_tab : Config<QString> {
@@ -66,7 +61,7 @@ struct expire_tab : Config<bool> {
 
 struct editor : Config<QString> {
     static QString name() { return "editor"; }
-    static Value defaultValue() { return DEFAULT_EDITOR; }
+    static Value defaultValue();
 };
 
 struct item_popup_interval : Config<int> {
@@ -111,6 +106,11 @@ struct edit_ctrl_return : Config<bool> {
 struct move : Config<bool> {
     static QString name() { return "move"; }
     static Value defaultValue() { return true; }
+};
+
+struct show_simple_items : Config<bool> {
+    static QString name() { return "show_simple_items"; }
+    static Value defaultValue() { return false; }
 };
 
 struct check_clipboard : Config<bool> {
@@ -224,6 +224,11 @@ struct tray_images : Config<bool> {
     static Value defaultValue() { return true; }
 };
 
+struct tray_menu_open_on_left_click : Config<bool> {
+    static QString name() { return "tray_menu_open_on_left_click"; }
+    static Value defaultValue() { return false; }
+};
+
 struct tray_tab : Config<QString> {
     static QString name() { return "tray_tab"; }
 };
@@ -264,6 +269,11 @@ struct action_output_tab : Config<QString> {
 
 struct tabs : Config<QStringList> {
     static QString name() { return "tabs"; }
+};
+
+struct show_advanced_command_settings : Config<bool> {
+    static QString name() { return "show_advanced_command_settings"; }
+    static Value defaultValue() { return false; }
 };
 
 } // namespace Config

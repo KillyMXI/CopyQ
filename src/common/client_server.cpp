@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -40,7 +40,7 @@ QString serverName(const QString &name)
     const QStringList tmpDirs = QStringList()
             << QString::fromUtf8(qgetenv("TMPDIR"))
             << QString("/tmp");
-    foreach (const QString &tmpDir, tmpDirs) {
+    for (const auto &tmpDir : tmpDirs) {
         if (!tmpDir.isEmpty()) {
             const QString oldSocketPath = tmpDir + "/" + oldSocketName;
             if (QFile::exists(oldSocketPath))

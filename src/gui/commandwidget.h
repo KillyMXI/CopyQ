@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -35,14 +35,14 @@ class CommandWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit CommandWidget(QWidget *parent = NULL);
+    explicit CommandWidget(QWidget *parent = nullptr);
     ~CommandWidget();
 
     /** Return command for the widget. */
     Command command() const;
 
     /** Set current command. */
-    void setCommand(const Command &command);
+    void setCommand(const Command &c);
 
     /** Set formats for format selection combo boxes. */
     void setFormats(const QStringList &formats);
@@ -54,10 +54,15 @@ signals:
 
     void automaticChanged(bool automatic);
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private slots:
     void on_lineEditName_textChanged(const QString &name);
 
     void on_buttonIcon_currentIconChanged(const QString &iconString);
+
+    void on_checkBoxShowAdvanced_stateChanged(int state);
 
     void on_checkBoxAutomatic_stateChanged(int);
 

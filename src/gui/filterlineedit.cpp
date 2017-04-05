@@ -84,9 +84,7 @@ void restoreOldFilterHistory()
 } // namespace
 
 /*!
-    \class Utils::FilterLineEdit
-
-    \brief The FilterLineEdit class is a fancy line edit customized for
+    The FilterLineEdit class is a fancy line edit customized for
     filtering purposes with a clear button.
 */
 
@@ -105,12 +103,12 @@ FilterLineEdit::FilterLineEdit(QWidget *parent)
     m_timerSearch->setInterval(200);
 
     connect( m_timerSearch, SIGNAL(timeout()),
-             this, SLOT(onTextChanged()) );
+             this, SLOT(emitTextChanged()) );
     connect( this, SIGNAL(textChanged(QString)),
-             m_timerSearch, SLOT(start()) );
+             this, SLOT(onTextChanged()) );
 
     // menu
-    QMenu *menu = new QMenu(this);
+    auto menu = new QMenu(this);
     setButtonMenu(Left, menu);
     connect( menu, SIGNAL(triggered(QAction*)),
              this, SLOT(onMenuAction()) );
@@ -131,7 +129,7 @@ QRegExp FilterLineEdit::filter() const
     if (m_actionRe->isChecked()) {
         pattern = text();
     } else {
-        foreach ( const QString &str, text().split(QRegExp("\\s+"), QString::SkipEmptyParts) ) {
+        for ( const auto &str : text().split(QRegExp("\\s+"), QString::SkipEmptyParts) ) {
             if ( !pattern.isEmpty() )
                 pattern.append(".*");
             pattern.append( QRegExp::escape(str) );
@@ -184,9 +182,27 @@ void FilterLineEdit::hideEvent(QHideEvent *event)
     }
 }
 
+void FilterLineEdit::focusInEvent(QFocusEvent *event)
+{
+    FancyLineEdit::focusInEvent(event);
+}
+
+void FilterLineEdit::focusOutEvent(QFocusEvent *event)
+{
+    FancyLineEdit::focusOutEvent(event);
+
+    if ( m_timerSearch->isActive() ) {
+        m_timerSearch->stop();
+        onTextChanged();
+    }
+}
+
 void FilterLineEdit::onTextChanged()
 {
-    emit filterChanged(filter());
+    if ( hasFocus() )
+        m_timerSearch->start();
+    else
+        emitTextChanged();
 }
 
 void FilterLineEdit::onMenuAction()
@@ -198,6 +214,11 @@ void FilterLineEdit::onMenuAction()
     const QRegExp re = filter();
     if ( !re.isEmpty() )
         emit filterChanged(re);
+}
+
+void FilterLineEdit::emitTextChanged()
+{
+    emit filterChanged(filter());
 }
 
 } // namespace Utils

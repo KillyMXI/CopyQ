@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -31,7 +31,7 @@ class CommandEdit : public QWidget
     Q_OBJECT
 
 public:
-    explicit CommandEdit(QWidget *parent = NULL);
+    explicit CommandEdit(QWidget *parent = nullptr);
     ~CommandEdit();
 
     void setCommand(const QString &command) const;
@@ -45,7 +45,7 @@ signals:
     void changed();
 
 protected:
-    void resizeEvent(QResizeEvent *event);
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void on_plainTextEditCommand_textChanged();

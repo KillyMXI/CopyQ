@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -22,40 +22,47 @@
 
 #include "platform/platformnativeinterface.h"
 
-#include <QStringList>
-
-class QApplication;
-class QCoreApplication;
-
 class WinPlatform : public PlatformNativeInterface
 {
 public:
     WinPlatform() {}
 
-    PlatformWindowPtr getWindow(WId winId);
+    PlatformWindowPtr getWindow(WId winId) override;
 
-    PlatformWindowPtr getCurrentWindow();
+    PlatformWindowPtr getCurrentWindow() override;
+
+    bool canGetWindowTitle() override { return true; }
 
     /** Setting application autostart is not implemented for Windows (works just from installer). */
-    bool canAutostart() { return false; }
+    bool canAutostart() override { return false; }
 
-    bool isAutostartEnabled() { return false; }
+    bool isAutostartEnabled() override { return false; }
 
-    void setAutostartEnabled(bool) {}
+    void setAutostartEnabled(bool) override {}
 
-    QApplication *createServerApplication(int &argc, char **argv);
+    QCoreApplication *createConsoleApplication(int &argc, char **argv) override;
 
-    QApplication *createMonitorApplication(int &argc, char **argv);
+    QApplication *createServerApplication(int &argc, char **argv) override;
 
-    QCoreApplication *createClientApplication(int &argc, char **argv);
+    QApplication *createMonitorApplication(int &argc, char **argv) override;
 
-    void loadSettings();
+    QCoreApplication *createClientApplication(int &argc, char **argv) override;
 
-    PlatformClipboardPtr clipboard();
+    void loadSettings() override;
 
-    int keyCode(const QKeyEvent &event);
+    PlatformClipboardPtr clipboard() override;
 
-    QStringList getCommandLineArguments(int, char**);
+    int keyCode(const QKeyEvent &event) override;
+
+    QStringList getCommandLineArguments(int, char**) override;
+
+    bool findPluginDir(QDir *pluginsDir) override;
+
+    QString defaultEditorCommand() override;
+
+    QString translationPrefix() override;
+
+    QString themePrefix() override;
 };
 
 #endif // WINPLATFORM_H

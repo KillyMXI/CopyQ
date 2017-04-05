@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -37,11 +37,13 @@ public:
     enum {
         CurrentPath,
         ActionId,
+        ActionName,
+        ProcessId,
         Rest
     };
 
     Arguments();
-    Arguments(const QStringList &arguments);
+    explicit Arguments(const QStringList &arguments);
 
     ~Arguments();
 
@@ -60,8 +62,8 @@ public:
     /** Total number of arguments. */
     int length() const { return m_args.size(); }
 
-    /** Check for emptiness. */
-    bool isEmpty() const { return m_args.empty(); }
+    /** Return true only if no arguments are available. */
+    bool isEmpty() const { return length() <= Rest; }
 
     /** Clear arguments. */
     void removeAllArguments();

@@ -13,6 +13,7 @@ FORMS += \
     ui/commandwidget.ui \
     ui/configtabappearance.ui \
     ui/configurationmanager.ui \
+    ui/importexportdialog.ui \
     ui/itemorderlist.ui \
     ui/mainwindow.ui \
     ui/pluginwidget.ui \
@@ -27,6 +28,7 @@ FORMS += \
     ui/logdialog.ui
 HEADERS += \
     app/app.h \
+    app/applicationexceptionhandler.h \
     app/clipboardclient.h \
     app/clipboardmonitor.h \
     app/clipboardserver.h \
@@ -44,11 +46,13 @@ HEADERS += \
     gui/actiondialog.h \
     gui/actionhandler.h \
     gui/clipboardbrowser.h \
+    gui/clipboardbrowserplaceholder.h \
     gui/clipboarddialog.h \
     gui/commandwidget.h \
     gui/configtabappearance.h \
     gui/configtabshortcuts.h \
     gui/configurationmanager.h \
+    gui/importexportdialog.h \
     gui/execmenu.h \
     gui/fancylineedit.h \
     gui/filterlineedit.h \
@@ -89,6 +93,8 @@ HEADERS += \
     scriptable/scriptable.h \
     scriptable/scriptableproxy.h \
     scriptable/scriptableworker.h \
+    scriptable/temporaryfileclass.h \
+    scriptable/temporaryfileprototype.h \
     tests/testinterface.h \
     app/client.h \
     common/mimetypes.h \
@@ -96,12 +102,14 @@ HEADERS += \
     common/commandstatus.h \
     common/monitormessagecode.h \
     common/settings.h \
+    common/temporarysettings.h \
     common/config.h \
     gui/processmanagerdialog.h \
     gui/iconselectdialog.h \
     gui/commanddialog.h \
     gui/commandedit.h \
     gui/commandsyntaxhighlighter.h \
+    gui/commandcompleter.h \
     gui/commandhelpbutton.h \
     scriptable/dirclass.h \
     scriptable/dirprototype.h \
@@ -121,6 +129,7 @@ HEADERS += \
     gui/menuitems.h
 SOURCES += \
     app/app.cpp \
+    app/applicationexceptionhandler.cpp \
     app/clipboardclient.cpp \
     app/clipboardmonitor.cpp \
     app/clipboardserver.cpp \
@@ -130,17 +139,25 @@ SOURCES += \
     common/client_server.cpp \
     common/clientsocket.cpp \
     common/common.cpp \
+    common/commandstore.cpp \
+    common/display.cpp \
+    common/messagehandlerforqt.cpp \
     common/option.cpp \
     common/server.cpp \
+    common/shortcuts.cpp \
+    common/textdata.cpp \
     gui/aboutdialog.cpp \
     gui/actiondialog.cpp \
     gui/actionhandler.cpp \
     gui/clipboardbrowser.cpp \
+    gui/clipboardbrowserplaceholder.cpp \
+    gui/clipboardbrowsershared.cpp \
     gui/clipboarddialog.cpp \
     gui/commandwidget.cpp \
     gui/configtabappearance.cpp \
     gui/configtabshortcuts.cpp \
     gui/configurationmanager.cpp \
+    gui/importexportdialog.cpp \
     gui/execmenu.cpp \
     gui/fancylineedit.cpp \
     gui/filterlineedit.cpp \
@@ -179,16 +196,20 @@ SOURCES += \
     scriptable/scriptable.cpp \
     scriptable/scriptableproxy.cpp \
     scriptable/scriptableworker.cpp \
+    scriptable/temporaryfileclass.cpp \
+    scriptable/temporaryfileprototype.cpp \
     app/client.cpp \
     common/mimetypes.cpp \
     common/log.cpp \
     common/settings.cpp \
+    common/temporarysettings.cpp \
     common/config.cpp \
     gui/processmanagerdialog.cpp \
     gui/iconselectdialog.cpp \
     gui/commanddialog.cpp \
     gui/commandedit.cpp \
     gui/commandsyntaxhighlighter.cpp \
+    gui/commandcompleter.cpp \
     gui/commandhelpbutton.cpp \
     scriptable/dirclass.cpp \
     scriptable/dirprototype.cpp \
@@ -217,7 +238,12 @@ QT += core gui xml network script svg
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG(debug, debug|release) {
-    DEFINES += HAS_TESTS COPYQ_DEBUG
+    CONFIG += tests
+    DEFINES += COPYQ_DEBUG
+}
+
+CONFIG(tests) {
+    DEFINES += HAS_TESTS
     QT += testlib
     SOURCES += tests/tests.cpp
     HEADERS += tests/tests.h

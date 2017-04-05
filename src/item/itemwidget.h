@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -27,15 +27,23 @@
 #include <QtPlugin>
 #include <QVariantMap>
 
+#include <memory>
+
 class QAbstractItemModel;
 class QTextEdit;
-class QFile;
+class QIODevice;
 class QFont;
 class QModelIndex;
 class QPalette;
 class QRegExp;
 class QWidget;
 struct Command;
+
+class ItemLoaderInterface;
+using ItemLoaderPtr = std::shared_ptr<ItemLoaderInterface>;
+
+class ItemSaverInterface;
+using ItemSaverPtr = std::shared_ptr<ItemSaverInterface>;
 
 #define COPYQ_PLUGIN_ITEM_LOADER_ID "org.CopyQ.ItemPlugin.ItemLoader/1.0"
 
@@ -58,7 +66,7 @@ class ItemWidget
 public:
     explicit ItemWidget(QWidget *widget);
 
-    virtual ~ItemWidget() {}
+    virtual ~ItemWidget() = default;
 
     /**
      * Set search and selections highlight color and font.
@@ -100,24 +108,26 @@ public:
     /**
      * Create external editor for @a index.
      *
-     * Default implementation returns NULL.
+     * Default implementation returns nullptr.
      *
      * @param index  index for which the editor is opened
      *
      * @return Editor object -- see documentation for public signals and slots of ItemEditor class --
-     *         NULL so default text editor is opened.
+     *         nullptr so default text editor is opened.
      */
     virtual QObject *createExternalEditor(const QModelIndex &index, QWidget *parent) const;
 
     /**
      * Size of widget needs to be updated (because maximum size chaged).
      */
-    virtual void updateSize(const QSize &maximumSize, int idealSize);
+    virtual void updateSize(const QSize &maximumSize, int idealWidth);
 
     /**
-     * Called if widget is set or unset as current.
+     * Mark item as tagged/untagged.
+     *
+     * Used to hide unimportant data when notes or tags are present.
      */
-    virtual void setCurrent(bool current);
+    virtual void setTagged(bool) {}
 
 protected:
     /**
@@ -145,12 +155,65 @@ private:
     QWidget *m_widget;
 };
 
+class ItemScriptable : public QObject
+{
+    Q_OBJECT
+public:
+    explicit ItemScriptable(QObject *parent) : QObject(parent) {}
+
+    QObject *scriptable() const { return m_scriptable; }
+    void setScriptable(QObject *scriptable) { m_scriptable = scriptable; }
+    virtual void start() {}
+
+protected:
+    QVariant call(const QString &method, const QVariantList &arguments = QVariantList());
+    QVariant eval(const QString &script);
+    QVariantList currentArguments();
+
+private:
+    QObject *m_scriptable = nullptr;
+};
+
+class ItemSaverInterface
+{
+public:
+    virtual ~ItemSaverInterface() = default;
+
+    /**
+     * Save items.
+     * @return true only if items were saved
+     */
+    virtual bool saveItems(const QString &tabName, const QAbstractItemModel &model, QIODevice *file);
+
+    /**
+     * Called before items are deleted by user.
+     * @return true if items can be removed, false to cancel the removal
+     */
+    virtual bool canRemoveItems(const QList<QModelIndex> &indexList, QString *error);
+
+    /**
+     * Called before items are moved out of list (i.e. deleted) by user.
+     * @return true if items can be moved, false to cancel the removal
+     */
+    virtual bool canMoveItems(const QList<QModelIndex> &);
+
+    /**
+     * Called when items are being deleted by user.
+     */
+    virtual void itemsRemovedByUser(const QList<QModelIndex> &indexList);
+
+    /**
+     * Return copy of items data.
+     */
+    virtual QVariantMap copyItem(const QAbstractItemModel &model, const QVariantMap &itemData);
+};
+
 class ItemLoaderInterface
 {
 public:
-    ItemLoaderInterface() {}
+    ItemLoaderInterface() = default;
 
-    virtual ~ItemLoaderInterface() {}
+    virtual ~ItemLoaderInterface() = default;
 
     /**
      * Return priority.
@@ -162,9 +225,9 @@ public:
     /**
      * Create ItemWidget instance from index data.
      *
-     * @return NULL if index hasn't appropriate data
+     * @return nullptr if index hasn't appropriate data
      */
-    virtual ItemWidget *create(const QModelIndex &index, QWidget *parent) const;
+    virtual ItemWidget *create(const QModelIndex &index, QWidget *parent, bool preview) const;
 
     /**
      * Simple ID of plugin (e.g. part of plugin file name).
@@ -213,69 +276,42 @@ public:
     /**
      * Create settings widget.
      */
-    virtual QWidget *createSettingsWidget(QWidget *) { return NULL; }
+    virtual QWidget *createSettingsWidget(QWidget *) { return nullptr; }
 
     /**
      * @return true only if items can be loaded
      */
-    virtual bool canLoadItems(QFile *file) const;
+    virtual bool canLoadItems(QIODevice *file) const;
 
     /**
      * @return true only if items can be saved
      */
-    virtual bool canSaveItems(const QAbstractItemModel &model) const;
+    virtual bool canSaveItems(const QString &tabName) const;
 
     /**
      * Load items.
      * @return true only if items were saved by this plugin (or just not to load them any further)
      */
-    virtual bool loadItems(QAbstractItemModel *model, QFile *file);
-
-    /**
-     * Save items.
-     * @return true only if items were saved
-     */
-    virtual bool saveItems(const QAbstractItemModel &model, QFile *file);
+    virtual ItemSaverPtr loadItems(
+            const QString &tabName, QAbstractItemModel *model, QIODevice *file, int maxItems);
 
     /**
      * Initialize tab (tab was not yet saved or loaded).
      * @return true only if successful
      */
-    virtual bool initializeTab(QAbstractItemModel *model);
-
-    /**
-     * Uninitialize tab (tab will be handled by different plugin).
-     */
-    virtual void uninitializeTab(QAbstractItemModel *model);
+    virtual ItemSaverPtr initializeTab(const QString &tabName, QAbstractItemModel *model, int maxItems);
 
     /**
      * Allow to transform item widget (wrap around a new widget).
-     * By default returns NULL not to wrap the widget.
+     * By default returns nullptr not to wrap the widget.
      * New ItemWidget must take care of deleting the old one!
      */
     virtual ItemWidget *transform(ItemWidget *itemWidget, const QModelIndex &index);
 
     /**
-     * Called before items are deleted by user.
-     * @return true if items can be removed, false to cancel the removal
+     * Transform loader.
      */
-    virtual bool canRemoveItems(const QList<QModelIndex> &indexList);
-
-    /**
-     * Called before items are moved out of list (i.e. deleted) by user.
-     * @return true if items can be moved, false to cancel the removal
-     */
-    virtual bool canMoveItems(const QList<QModelIndex> &);
-
-    /**
-     * Called when items are being deleted by user.
-     */
-    virtual void itemsRemovedByUser(const QList<QModelIndex> &indexList);
-
-    /**
-     * Return copy of items data.
-     */
-    virtual QVariantMap copyItem(const QAbstractItemModel &model, const QVariantMap &itemData);
+    virtual ItemSaverPtr transformSaver(const ItemSaverPtr &saver, QAbstractItemModel *model);
 
     /**
      * Return true if regular expression matches items content.
@@ -295,14 +331,18 @@ public:
 
     /**
      * Return QObject instance with signals (by default null pointer).
-     * Returned QObject must have signal error(QString) for signaling errors.
+     *
+     * Returned QObject can have signal error(QString) for signaling errors
+     * and addCommands(QList<Command>) to open and add commands to Command dialog.
      */
     virtual const QObject *signaler() const;
 
     /**
-     * Return script to run before client scripts.
+     * Return scriptable object that can be used in scripts.
+     *
+     * Object will be available as "plugins.<PLUGIN_ID>".
      */
-    virtual QString script() const;
+    virtual ItemScriptable *scriptableObject(QObject *parent);
 
     /**
      * Adds commands from scripts for command dialog.

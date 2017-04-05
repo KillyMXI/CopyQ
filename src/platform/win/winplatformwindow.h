@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -32,12 +32,12 @@ class WinPlatformWindow : public PlatformWindow
 public:
     explicit WinPlatformWindow(HWND window);
 
-    QString getTitle();
+    QString getTitle() override;
 
-    void raise();
+    void raise() override;
 
-    void pasteClipboard();
-    void copy();
+    void pasteClipboard() override;
+    void copy() override;
 
 private:
     void sendKeyPress(WORD modifier, WORD key);

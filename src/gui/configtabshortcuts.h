@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -33,14 +33,14 @@ class ConfigTabShortcuts : public QWidget
     Q_OBJECT
 
 public:
-    explicit ConfigTabShortcuts(QWidget *parent = NULL);
+    explicit ConfigTabShortcuts(QWidget *parent = nullptr);
 
     ~ConfigTabShortcuts();
 
     /** Load shortcuts from settings file. */
-    void loadShortcuts(QSettings &settings);
+    void loadShortcuts(const QSettings &settings);
     /** Save shortcuts to settings file. */
-    void saveShortcuts(QSettings &settings) const;
+    void saveShortcuts(QSettings *settings) const;
 
 signals:
     void openCommandDialogRequest();

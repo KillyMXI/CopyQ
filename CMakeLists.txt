@@ -1,13 +1,22 @@
 cmake_minimum_required(VERSION 2.8.6)
 project(copyq)
 
+# C++11
+if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.1)
+    set(CMAKE_CXX_STANDARD 11)
+else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+endif()
+
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     set(COPYQ_DEBUG ON)
     add_definitions( -DCOPYQ_DEBUG  )
 endif()
 
+OPTION(PEDANTIC "Enable all compiler warnings" OFF)
+
 # Options (cmake -LH)
-OPTION(WITH_QT5 "Qt5 support" OFF)
+OPTION(WITH_QT5 "Use Qt 5 (disable to use Qt 4 instead)" ON)
 OPTION(WITH_TESTS "Run test cases from command line" ${COPYQ_DEBUG})
 OPTION(WITH_PLUGINS "Compile plugins" ON)
 # Linux-specific options
@@ -23,30 +32,27 @@ endif()
 
 set(CMAKE_AUTOMOC ON)
 
-# If Qt4 unavailable use Qt5.
-if (NOT WITH_QT5)
+if (WITH_QT5)
+    cmake_minimum_required(VERSION 2.8.8)
+    find_package(Qt5Widgets)
+    if (NOT Qt5Widgets_FOUND)
+        message(FATAL_ERROR "Qt 5 is unavailable. To compile with Qt 4 use -DWITH_QT5=OFF.")
+    endif()
+    message(STATUS "Building with Qt 5.")
+else()
     find_package(Qt4)
     if (NOT QT4_FOUND)
         # Try different executable name.
         set(QT_QMAKE_EXECUTABLE "qmake-qt4")
         find_package(Qt4)
         if (NOT QT4_FOUND)
-            message(FATAL_ERROR
-                    "Qt 4 is unavailable. To compile with Qt 5 use -DWITH_QT5=TRUE.\n"
-                    "Note: Qt version 5.0.2 and earlier can be unstable on some systems.")
+            message(FATAL_ERROR "Qt 4 is unavailable. To compile with Qt 5 use -DWITH_QT5=ON.")
         endif()
     endif()
-endif()
-
-if (WITH_QT5)
-    cmake_minimum_required(VERSION 2.8.8)
-    find_package(Qt5Widgets REQUIRED)
-    message(STATUS "Building with Qt 5.")
-else()
     message(STATUS "Building with Qt 4.")
 endif()
 
-set(copyq_ICON_PREFIX src/images/icon_)
+set(copyq_ICON_PREFIX src/images/icon)
 set(copyq_ICON_NORMAL src/images/icon.svg)
 set(copyq_ICON_BUSY   src/images/icon-running.svg)
 set(copyq_DESKTOP     shared/copyq.desktop)
@@ -57,6 +63,69 @@ if(CMAKE_COMPILER_IS_GNUCXX OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-long-long")
     set(CMAKE_CXX_FLAGS_DEBUG
         "${CMAKE_CXX_FLAGS_DEBUG} -Wextra -Wall -pedantic -Wfloat-equal -Woverloaded-virtual -Wundef")
+endif()
+
+if (PEDANTIC)
+    if (CMAKE_COMPILER_IS_GNUCXX)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra -Wall \
+            -Wsuggest-override \
+            -Wlogical-op \
+            -Wnoexcept \
+            -Wstrict-null-sentinel \
+            ")
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything \
+            -Winconsistent-missing-override \
+            ")
+
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+            -Wno-c++98-compat \
+            -Wno-c++98-compat-pedantic \
+            -Wno-shadow-field-in-constructor \
+            -Wno-weak-vtables \
+            -Wno-disabled-macro-expansion \
+            -fcomment-block-commands=retval \
+            ")
+
+        # Disable errors from moc-generated files.
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+            -Wno-undefined-reinterpret-cast \
+            -Wno-missing-prototypes \
+            ")
+
+        # Disable errors from qrc-generated files.
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+            -Wno-exit-time-destructors \
+            -Wno-global-constructors \
+            ")
+    endif()
+
+    set(CMAKE_CXX_FLAGS
+        "${CMAKE_CXX_FLAGS} -pedantic -Werror \
+        -Wcast-align \
+        -Wcast-qual \
+        -Wctor-dtor-privacy \
+        -Wdisabled-optimization \
+        -Wformat=2 \
+        -Winit-self \
+        -Wmissing-declarations \
+        -Wmissing-include-dirs \
+        -Wold-style-cast \
+        -Woverloaded-virtual \
+        -Wredundant-decls \
+        -Wstrict-overflow=4 \
+        -Wundef \
+        ")
+
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+        -Wno-padded \
+        -Wno-switch-enum \
+        ")
+
+    # Disable Q_OBJECT macro warnings.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+        -Wno-unused-member-function \
+        ")
 endif()
 
 if(WITH_TESTS)
@@ -71,20 +140,31 @@ if(WITH_TESTS)
     endif()
 endif()
 
-find_package(Git)
-if(GIT_FOUND)
-    execute_process(COMMAND
-        "${GIT_EXECUTABLE}" describe
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        RESULT_VARIABLE copyq_git_describe_result
-        OUTPUT_VARIABLE copyq_git_describe_output
-        ERROR_QUIET
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        )
-    if(copyq_git_describe_result EQUAL 0)
-        message(STATUS "Building CopyQ version ${copyq_git_describe_output}.")
-        add_definitions( -DCOPYQ_VERSION="${copyq_git_describe_output}" )
+# Get application version.
+if (EXISTS "version.txt")
+    file(STRINGS "version.txt" copyq_version)
+endif()
+
+if (NOT copyq_version)
+    find_package(Git)
+    if(GIT_FOUND)
+        execute_process(COMMAND
+            "${GIT_EXECUTABLE}" describe
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            RESULT_VARIABLE copyq_git_describe_result
+            OUTPUT_VARIABLE copyq_git_describe_output
+            ERROR_QUIET
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+        if(copyq_git_describe_result EQUAL 0)
+            set(copyq_version "${copyq_git_describe_output}")
+        endif()
     endif()
+endif()
+
+if (copyq_version)
+    message(STATUS "Building CopyQ version ${copyq_version}.")
+    add_definitions( -DCOPYQ_VERSION="${copyq_version}" )
 endif()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -96,7 +176,9 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     foreach (copyq_ICON_EXTENT 16 22 24 32 48 64 128)
         set(copyq_ICON_SIZE "${copyq_ICON_EXTENT}x${copyq_ICON_EXTENT}")
         string(REPLACE "%SIZE%" "${copyq_ICON_SIZE}" copyq_ICON_TARGET_PREFIX "${ICON_INSTALL_PREFIX_TEMPLATE}")
-        install(FILES "${copyq_ICON_PREFIX}${copyq_ICON_SIZE}.png" DESTINATION "${copyq_ICON_TARGET_PREFIX}" RENAME copyq.png)
+        foreach (copyq_ICON_TYPE "" "-normal" "-busy")
+            install(FILES "${copyq_ICON_PREFIX}${copyq_ICON_TYPE}_${copyq_ICON_SIZE}.png" DESTINATION "${copyq_ICON_TARGET_PREFIX}" RENAME "copyq${copyq_ICON_TYPE}.png")
+        endforeach()
     endforeach()
 
     set(copyq_THEME_INSTALL_PREFIX ${THEME_INSTALL_PREFIX})

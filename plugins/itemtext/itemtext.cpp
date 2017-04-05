@@ -104,8 +104,6 @@ ItemText::ItemText(const QString &text, bool isRichText, int maxLines, int maxim
 
     setContextMenuPolicy(Qt::NoContextMenu);
 
-    viewport()->installEventFilter(this);
-
     if (isRichText)
         m_textDocument.setHtml( normalizeText(text) );
     else
@@ -183,11 +181,13 @@ void ItemText::updateSize(const QSize &maximumSize, int idealWidth)
         m_textDocument.setDefaultTextOption(option);
     }
 
-    const int h = m_textDocument.size().height();
-    setFixedHeight(0 < m_maximumHeight && m_maximumHeight < h ? m_maximumHeight : h);
-
     const QRectF rect = m_textDocument.documentLayout()->frameBoundingRect(m_textDocument.rootFrame());
-    setFixedWidth(rect.right());
+    setFixedWidth( static_cast<int>(rect.right()) );
+
+    QTextCursor tc(&m_textDocument);
+    tc.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
+    const auto h = static_cast<int>( cursorRect(tc).bottom() + 4 * logicalDpiY() / 96.0 );
+    setFixedHeight(0 < m_maximumHeight && m_maximumHeight < h ? m_maximumHeight : h);
 }
 
 bool ItemText::eventFilter(QObject *, QEvent *event)
@@ -199,22 +199,29 @@ ItemTextLoader::ItemTextLoader()
 {
 }
 
-ItemTextLoader::~ItemTextLoader()
-{
-}
+ItemTextLoader::~ItemTextLoader() = default;
 
-ItemWidget *ItemTextLoader::create(const QModelIndex &index, QWidget *parent) const
+ItemWidget *ItemTextLoader::create(const QModelIndex &index, QWidget *parent, bool preview) const
 {
+    if ( index.data(contentType::isHidden).toBool() )
+        return nullptr;
+
     QString text;
     bool isRichText = m_settings.value(optionUseRichText, true).toBool()
             && getRichText(index, &text);
 
     if ( !isRichText && !getText(index, &text) )
-        return NULL;
+        return nullptr;
 
-    const int maxLines = m_settings.value(optionMaximumLines, 0).toInt();
-    const int maxHeight = m_settings.value(optionMaximumHeight, 0).toInt();
-    return new ItemText(text, isRichText, maxLines, maxHeight, parent);
+    const int maxLines = preview ? 0 : m_settings.value(optionMaximumLines, 0).toInt();
+    const int maxHeight = preview ? 0 : m_settings.value(optionMaximumHeight, 0).toInt();
+    auto item = new ItemText(text, isRichText, maxLines, maxHeight, parent);
+
+    // Allow faster selection in preview window.
+    if (!preview)
+        item->viewport()->installEventFilter(item);
+
+    return item;
 }
 
 QStringList ItemTextLoader::formatsToSave() const

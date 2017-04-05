@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -19,6 +19,7 @@
 
 #include "iconselectbutton.h"
 
+#include "common/config.h"
 #include "common/common.h"
 #include "gui/iconfont.h"
 #include "gui/iconselectdialog.h"
@@ -27,7 +28,8 @@
 #include <QApplication>
 #include <QDesktopWidget>
 #include <QIcon>
-#include <QScopedPointer>
+
+#include <memory>
 
 IconSelectButton::IconSelectButton(QWidget *parent)
     : QPushButton(parent)
@@ -54,7 +56,7 @@ void IconSelectButton::setCurrentIcon(const QString &iconString)
 
     if ( iconString.size() == 1 ) {
         const QChar c = iconString[0];
-        if ( c.unicode() >= IconFirst && c.unicode() <= IconLast && QFontMetrics(iconFont()).inFont(c) ) {
+        if ( c.unicode() >= IconFirst && QFontMetrics(iconFont()).inFont(c) ) {
             setFont(iconFont());
             setText(iconString);
         } else {
@@ -84,15 +86,16 @@ QSize IconSelectButton::sizeHint() const
 
 void IconSelectButton::onClicked()
 {
-    QScopedPointer<IconSelectDialog> dialog( new IconSelectDialog(m_currentIcon, this) );
+    std::unique_ptr<IconSelectDialog> dialog( new IconSelectDialog(m_currentIcon, this) );
 
     // Set position under button.
     const QPoint dialogPosition = mapToGlobal(QPoint(0, height()));
-    moveWindowOnScreen(dialog.data(), dialogPosition);
+    moveWindowOnScreen( dialog.get(), dialogPosition );
 
     dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-    connect(dialog.data(), SIGNAL(iconSelected(QString)), this, SLOT(setCurrentIcon(QString)));
+    connect( dialog.get(), SIGNAL(iconSelected(QString)),
+             this, SLOT(setCurrentIcon(QString)) );
     dialog->open();
-    dialog.take();
+    dialog.release();
 }
 

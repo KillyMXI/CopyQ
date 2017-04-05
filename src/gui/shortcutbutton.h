@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -34,10 +34,7 @@ class ShortcutButton : public QWidget
 {
     Q_OBJECT
 public:
-    explicit ShortcutButton(QWidget *parent = NULL);
-
-    /** Expect modifier or accept shortcuts without one. */
-    void setExpectModifier(bool expectModifier) { m_expectModifier = expectModifier; }
+    explicit ShortcutButton(QWidget *parent = nullptr);
 
     /** Creates new shortcut button for @a shortcut if it's valid and same button doesn't exist. */
     void addShortcut(const QKeySequence &shortcut);
@@ -74,7 +71,7 @@ signals:
     void shortcutRemoved(const QKeySequence &shortcut);
 
 protected:
-    void showEvent(QShowEvent *event);
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void onShortcutButtonClicked();
@@ -82,15 +79,14 @@ private slots:
     void addShortcut(QPushButton *shortcutButton);
     void setButtonShortcut(QPushButton *shortcutButton, const QKeySequence &shortcut);
 
+private:
     QWidget *shortcutButton(int index) const;
 
-private:
     QKeySequence shortcutForButton(const QWidget &w) const;
 
     QKeySequence m_defaultShortcut;
     QHBoxLayout *m_layout;
     QPushButton *m_buttonAddShortcut;
-    bool m_expectModifier;
 };
 
 #endif // SHORTCUTBUTTON_H

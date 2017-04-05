@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -20,9 +20,9 @@
 #include "tabicons.h"
 
 #include "common/appconfig.h"
-#include "common/common.h"
 #include "common/config.h"
 #include "common/settings.h"
+#include "common/textdata.h"
 #include "gui/iconfactory.h"
 
 #include <QComboBox>
@@ -72,7 +72,7 @@ QStringList savedTabs()
 
     QRegExp re("_tab_([^.]*)");
 
-    foreach (const QString fileName, files) {
+    for (const auto &fileName : files) {
         if ( fileName.contains(re) ) {
             const QString tabName =
                     getTextData(QByteArray::fromBase64(re.cap(1).toUtf8()));
@@ -106,7 +106,7 @@ void setIconNameForTabName(const QString &name, const QString &icon)
     settings.beginWriteArray("Tabs");
     int i = 0;
 
-    foreach ( const QString &tabName, icons.keys() ) {
+    for ( const auto &tabName : icons.keys() ) {
         settings.setArrayIndex(i++);
         settings.setValue("name", tabName);
         settings.setValue("icon", icons[tabName]);
@@ -139,7 +139,7 @@ void setDefaultTabItemCounterStyle(QWidget *widget)
     if (pointSize > 0.0)
         font.setPointSizeF(pointSize * 0.7);
     else
-        font.setPixelSize(font.pixelSize() * 0.7);
+        font.setPixelSize( static_cast<int>(font.pixelSize() * 0.7) );
     widget->setFont(font);
 
     QPalette pal = widget->palette();

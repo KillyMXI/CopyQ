@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -23,22 +23,18 @@
 #include <QObject>
 
 class Arguments;
+class ClientSocket;
 
 class Client : public QObject
 {
     Q_OBJECT
 public:
-    explicit Client(QObject *parent = NULL);
-
-    virtual ~Client() {}
+    explicit Client(QObject *parent = nullptr);
 
 protected:
-    bool startClientSocket(const QString &serverName, int argc, char **argv, int skipArgc = 0);
+    void startClientSocket(const QString &serverName, int argc, char **argv, int skipArgc, int messageCode);
 
     void sendMessage(const QByteArray &message, int messageCode);
-
-signals:
-    void sendMessageRequest(const QByteArray &message, int messageCode);
 
 private slots:
     /** Message received from server. */
@@ -46,6 +42,12 @@ private slots:
 
     /** Server connection closed. */
     virtual void onDisconnected() = 0;
+
+    /** Called if connection cannot be estabilished. */
+    virtual void onConnectionFailed() = 0;
+
+private:
+    ClientSocket *m_socket;
 };
 
 #endif // CLIENT_H

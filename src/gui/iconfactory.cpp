@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -36,10 +36,10 @@
 
 #if QT_VERSION < 0x050000
 # include <QIconEngineV2>
-typedef QIconEngineV2 QtIconEngine;
+using QtIconEngine = QIconEngineV2;
 #else
 # include <QIconEngine>
-typedef QIconEngine QtIconEngine;
+using QtIconEngine = QIconEngine;
 #endif
 
 namespace {
@@ -86,7 +86,7 @@ QColor sessionNameToColor(const QString &name)
     int g = 0;
     int b = 0;
 
-    foreach (const QChar &c, name) {
+    for (const auto &c : name) {
         const ushort x = c.unicode() % 3;
         if (x == 0)
             r += 255;
@@ -120,12 +120,19 @@ void drawFontIcon(QPixmap *pix, ushort id, int w, int h, const QColor &color)
 {
     QPainter painter(pix);
     QFont font = iconFont();
-    const int m = h / 8;
-    const int m2 = m / 2;
-    font.setPixelSize(h - m);
+    const int margins = h / 8;
+    font.setPixelSize(h - margins);
     painter.setFont(font);
     painter.setPen(color);
-    painter.drawText( QRect(m2, m2, w - m2, h - m2), Qt::AlignCenter, QString(QChar(id)) );
+
+    // Center the icon to whole pixels so it stays sharp.
+    const auto flags = Qt::AlignTop | Qt::AlignLeft;
+    const auto iconText = QString(QChar(id));
+    auto boundingRect = painter.boundingRect(0, 0, w, h, flags, iconText);
+    const auto pos = QPoint(w - boundingRect.width(), h - boundingRect.height()) / 2;
+    boundingRect.moveTopLeft(pos);
+
+    painter.drawText(boundingRect, flags, iconText);
 }
 
 QColor getDefaultIconColor(const QColor &color)
@@ -154,22 +161,22 @@ bool useSystemIcons()
 class IconEngine : public QtIconEngine
 {
 public:
-    void paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State state)
+    void paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State state) override
     {
         painter->drawPixmap( rect, createPixmap(rect.size(), mode, state, painter) );
     }
 
-    QPixmap pixmap(const QSize &size, QIcon::Mode mode, QIcon::State state)
+    QPixmap pixmap(const QSize &size, QIcon::Mode mode, QIcon::State state) override
     {
         return createPixmap(size, mode, state);
     }
 
-    QtIconEngine *clone() const
+    QtIconEngine *clone() const override
     {
         return new IconEngine(*this);
     }
 
-    QPixmap createPixmap(const QSize &size, QIcon::Mode mode, QIcon::State state, QPainter *painter = NULL)
+    QPixmap createPixmap(const QSize &size, QIcon::Mode mode, QIcon::State state, QPainter *painter = nullptr)
     {
         if ( m_iconId == 0 || useSystemIcons()) {
             // Tint tab icons.
@@ -195,10 +202,37 @@ public:
         return pixmap;
     }
 
+    // QIconEngine doesn't seem to work in menus on OS X.
+#ifdef Q_OS_MAC
+    void updateIcon(QIcon *icon, const QSize &size, QIcon::Mode mode)
+    {
+        icon->addPixmap( createPixmap(size, mode, QIcon::Off), mode, QIcon::Off );
+    }
+
+    void updateIcon(QIcon *icon, int extent)
+    {
+        const QSize size(extent, extent);
+        updateIcon(icon, size, QIcon::Normal);
+        updateIcon(icon, size, QIcon::Disabled);
+        updateIcon(icon, size, QIcon::Active);
+    }
+
+    static QIcon createIcon(ushort iconId, const QString &iconName)
+    {
+        IconEngine iconEngine(iconId, iconName);
+        QIcon icon;
+        iconEngine.updateIcon(&icon, 16);
+        iconEngine.updateIcon(&icon, 32);
+        iconEngine.updateIcon(&icon, 64);
+        iconEngine.updateIcon(&icon, 128);
+        return icon;
+    }
+#else
     static QIcon createIcon(ushort iconId, const QString &iconName)
     {
         return QIcon( new IconEngine(iconId, iconName) );
     }
+#endif
 
 private:
     IconEngine(ushort iconId, const QString &iconName)
@@ -209,8 +243,9 @@ private:
 
     QColor color(QPainter *painter, QIcon::Mode mode)
     {
-        QWidget *parent = painter ? dynamic_cast<QWidget*>(painter->device())
-                                  : qobject_cast<QWidget*>(activePaintDevice);
+        auto parent = painter
+                ? dynamic_cast<QWidget*>(painter->device())
+                : qobject_cast<QWidget*>(activePaintDevice.data());
 
         const bool selected = (mode == QIcon::Active || mode == QIcon::Selected);
         QColor color = parent ? getDefaultIconColor(*parent, selected) : Qt::darkGray;
@@ -224,6 +259,12 @@ private:
     ushort m_iconId;
     QString m_iconName;
 };
+
+void updateIcon(QIcon *icon, const QPixmap &pix, int extent)
+{
+    if (pix.height() > extent)
+        icon->addPixmap( pix.scaledToHeight(extent, Qt::SmoothTransformation) );
+}
 
 } // namespace
 
@@ -255,8 +296,8 @@ QIcon iconFromFile(const QString &fileName)
     if ( fileName.isEmpty() )
         return QIcon();
 
-    ushort unicode = fileName.at(0).unicode();
-    if (fileName.size() == 1 && unicode >= IconFirst && unicode <= IconLast)
+    const auto unicode = toIconId(fileName);
+    if (unicode != 0)
         return loadIconFont() ? IconEngine::createIcon(unicode, "") : QIcon();
 
     return QIcon(fileName);
@@ -283,6 +324,8 @@ QIcon appIcon(AppIconType iconType)
 
     if (sessionName.isEmpty())
         icon = QIcon::fromTheme("copyq" + suffix);
+    else
+        icon = QIcon::fromTheme("copyq-" + sessionName + "-" + suffix);
 
     if (icon.isNull()) {
         const QString resourceSuffix = running ? "-running" : "";
@@ -295,6 +338,12 @@ QIcon appIcon(AppIconType iconType)
         }
 
         icon.addPixmap(pix);
+
+        // This makes the icon smoother on some systems.
+        updateIcon(&icon, pix, 48);
+        updateIcon(&icon, pix, 32);
+        updateIcon(&icon, pix, 24);
+        updateIcon(&icon, pix, 16);
     }
 
     return icon;
@@ -317,4 +366,13 @@ QColor getDefaultIconColor(const QWidget &widget, bool selected)
 
     QPalette::ColorRole role = selected ? QPalette::Highlight : parent->backgroundRole();
     return getDefaultIconColor( parent->palette().color(QPalette::Active, role) );
+}
+
+unsigned short toIconId(const QString &fileNameOrId)
+{
+    if ( fileNameOrId.size() != 1 )
+        return 0;
+
+    const auto unicode = fileNameOrId.at(0).unicode();
+    return unicode >= IconFirst ? unicode : 0;
 }

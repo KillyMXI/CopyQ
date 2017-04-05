@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2016, Lukas Holecek <hluk@email.cz>
+    Copyright (c) 2017, Lukas Holecek <hluk@email.cz>
 
     This file is part of CopyQ.
 
@@ -21,6 +21,7 @@
 #define COMMANDDIALOG_H
 
 #include "common/command.h"
+#include "common/commandstore.h"
 
 #include <QDialog>
 
@@ -35,25 +36,20 @@ class CommandDialog : public QDialog
     Q_OBJECT
 
 public:
-    typedef QList<Command> Commands;
-
     CommandDialog(
             const Commands &pluginCommands, const QStringList &formats,
-            QWidget *parent = NULL);
+            QWidget *parent = nullptr);
     ~CommandDialog();
 
-    /** Return enabled commands. */
-    Commands commands(bool onlyEnabled = true, bool onlySaved = true) const;
-
-    /** Create new command. */
-    void addCommand(const Command &command);
+    /** Create new commands. */
+    void addCommands(const Commands &commands);
 
     void apply();
 
     bool maybeClose(QWidget *saveMessageBoxParent);
 
 public slots:
-    void reject();
+    void reject() override;
 
 signals:
     void commandsSaved();
@@ -83,8 +79,9 @@ private slots:
     void onClipboardChanged();
 
 private:
-    void addCommandWithoutSave(const Command &command, int targetRow = -1);
-    void loadCommandsFromFile(const QString &fileName, int targetRow);
+    Commands currentCommands() const;
+
+    void addCommandsWithoutSave(const Commands &commands, int targetRow);
     Commands selectedCommands() const;
     QString serializeSelectedCommands();
     bool hasUnsavedChanges() const;
@@ -95,8 +92,5 @@ private:
     Commands m_pluginCommands;
     QStringList m_formats;
 };
-
-CommandDialog::Commands loadCommands(bool onlyEnabled = true);
-void saveCommands(const CommandDialog::Commands &commands);
 
 #endif // COMMANDDIALOG_H
